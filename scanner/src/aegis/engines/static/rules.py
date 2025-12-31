@@ -1,4 +1,4 @@
-# Copyright 2025 Aegis Security
+# Copyright 2025 Veritensor Security
 # Data adapted from ModelScan (Apache 2.0 License)
 #
 # This module defines the "Blocklist" of unsafe Python globals.
