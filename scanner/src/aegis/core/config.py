@@ -1,9 +1,9 @@
-# Copyright 2025 Aegis Security
+# Copyright 2025 Veritensor Security
 #
 # This module handles configuration loading.
 # Priority:
 # 1. Environment Variables (CI/CD overrides)
-# 2. aegis.yaml (Local configuration)
+# 2. veritensor.yaml (Local configuration)
 # 3. Defaults (Hardcoded safety nets)
 
 import os
@@ -21,13 +21,13 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Default path for the configuration file
-DEFAULT_CONFIG_PATH = Path("aegis.yaml")
+DEFAULT_CONFIG_PATH = Path("veritensor.yaml")
 
 
 @dataclass
-class AegisConfig:
+class VeritensorConfig:
     """
-    Runtime configuration for Aegis.
+    Runtime configuration for Veritensor.
     """
     # --- Security Policies ---
     # Additional modules to trust in Pickle (extends SAFE_MODULES)
@@ -59,10 +59,10 @@ class ConfigLoader:
     """
     Singleton-like loader that merges YAML and ENV variables.
     """
-    _instance: Optional[AegisConfig] = None
+    _instance: Optional[VeritensorConfig] = None
 
     @classmethod
-    def load(cls, config_path: Path = DEFAULT_CONFIG_PATH) -> AegisConfig:
+    def load(cls, config_path: Path = DEFAULT_CONFIG_PATH) -> VeritensorConfig:
         """
         Loads configuration with the following precedence:
         ENV > YAML > Defaults.
@@ -76,7 +76,7 @@ class ConfigLoader:
         # 2. Load YAML if exists
         if config_path.exists():
             if yaml is None:
-                logger.warning("aegis.yaml found but PyYAML not installed. Skipping config file.")
+                logger.warning("veritensor.yaml found but PyYAML not installed. Skipping config file.")
             else:
                 try:
                     with open(config_path, "r") as f:
@@ -88,22 +88,22 @@ class ConfigLoader:
                     logger.error(f"Failed to parse {config_path}: {e}")
 
         # 3. Override with Environment Variables (CI/CD friendly)
-        # AEGIS_HF_TOKEN -> hf_token
-        if "AEGIS_HF_TOKEN" in os.environ:
-            config_data["hf_token"] = os.environ["AEGIS_HF_TOKEN"]
+        # VERITENSOR_HF_TOKEN -> hf_token
+        if "VERITENSOR_HF_TOKEN" in os.environ:
+            config_data["hf_token"] = os.environ["VERITENSOR_HF_TOKEN"]
         elif "HF_TOKEN" in os.environ: # Fallback to standard HF env
             config_data["hf_token"] = os.environ["HF_TOKEN"]
 
-        # AEGIS_PRIVATE_KEY_PATH -> private_key_path
-        if "AEGIS_PRIVATE_KEY_PATH" in os.environ:
-            config_data["private_key_path"] = os.environ["AEGIS_PRIVATE_KEY_PATH"]
+        # VERITENSOR_PRIVATE_KEY_PATH -> private_key_path
+        if "VERITENSOR_PRIVATE_KEY_PATH" in os.environ:
+            config_data["private_key_path"] = os.environ["VERITENSOR_PRIVATE_KEY_PATH"]
 
-        # AEGIS_FAIL_ON -> fail_on_severity
-        if "AEGIS_FAIL_ON" in os.environ:
-            config_data["fail_on_severity"] = os.environ["AEGIS_FAIL_ON"]
+        # VERITENSOR_FAIL_ON -> fail_on_severity
+        if "VERITENSOR_FAIL_ON" in os.environ:
+            config_data["fail_on_severity"] = os.environ["VERITENSOR_FAIL_ON"]
 
         # 4. Construct Object
-        cls._instance = AegisConfig(
+        cls._instance = VeritensorConfig(
             allowed_modules=config_data.get("allowed_modules", []),
             ignored_rules=config_data.get("ignored_rules", []),
             fail_on_severity=config_data.get("fail_on_severity", "CRITICAL"),
@@ -121,7 +121,7 @@ class ConfigLoader:
         Default Rules + User Config Allowed Modules.
         """
         # Import here to avoid circular dependency
-        from aegis.engines.static.pickle_engine import SAFE_MODULES as DEFAULT_SAFE
+        from veritensor.engines.static.pickle_engine import SAFE_MODULES as DEFAULT_SAFE
         
         config = cls.load()
         user_allowed = set(config.allowed_modules)
