@@ -1,5 +1,5 @@
 import pytest
-from aegis.engines.static.pickle_engine import scan_pickle_stream
+from veritensor.engines.static.pickle_engine import scan_pickle_stream
 
 def test_scan_clean_file(clean_model_path):
     with open(clean_model_path, "rb") as f:
