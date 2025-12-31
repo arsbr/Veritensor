@@ -1,4 +1,4 @@
-# Copyright 2025 Aegis Security
+# Copyright 2025 Veritensor Security
 # Logic adapted from:
 # 1. gguf-py (MIT License) - for GGUF parsing
 # 2. safetensors (Apache 2.0) - for Safetensors header parsing
