@@ -1,4 +1,4 @@
-# Copyright 2025 Aegis Security
+# Copyright 2025 Veritensor Security
 # Logic adapted from AIsbom (Apache 2.0 License)
 #
 # This module provides a seekable, readable stream backed by HTTP Range requests.
