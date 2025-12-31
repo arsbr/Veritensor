@@ -1,4 +1,4 @@
-# Copyright 2025 Aegis Security
+# Copyright 2025 Veritensor Security
 # Logic adapted from ModelScan (Apache 2.0 License)
 #
 # This engine scans Keras models (.h5, .keras) for "Lambda" layers.
