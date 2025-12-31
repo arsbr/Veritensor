@@ -103,6 +103,9 @@ def scan_pickle_stream(data: bytes, strict_mode: bool = True) -> List[str]:
     Returns:
         List of detected threats (e.g., ["UNSAFE_IMPORT: os.system"]).
     """
+    # Limit memo size to prevent memory exhaustion attacks
+    MAX_MEMO_SIZE = 100 
+    
     threats = []
     
     # 'memo' emulates the Pickle VM stack. 
@@ -119,7 +122,8 @@ def scan_pickle_stream(data: bytes, strict_mode: bool = True) -> List[str]:
             if opcode.name in ("SHORT_BINUNICODE", "UNICODE", "BINUNICODE"):
                 memo.append(arg)
                 # We only need the top 2 items for STACK_GLOBAL (module, name)
-                if len(memo) > 5: 
+                # VULNERABILITY FIX: Prevent infinite growth
+                if len(memo) > MAX_MEMO_SIZE: 
                     memo.pop(0)
             
             # If the stack is modified by other ops, we might lose track.
