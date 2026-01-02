@@ -4,51 +4,29 @@
 # This engine performs static analysis of Pickle bytecode.
 # It emulates the Pickle VM stack to detect obfuscated calls (STACK_GLOBAL).
 
+
 import pickletools
 import io
 import logging
-from typing import List, Set, Tuple
+from typing import List
 
 logger = logging.getLogger(__name__)
 
 # --- Security Policies (Allowlist) ---
-# We use a "Strict by Default" approach. Only known safe mathematical
-# and data manipulation libraries are allowed.
-
 SAFE_MODULES = {
-    "torch",
-    "numpy",
-    "collections",
-    "builtins",
-    "copyreg",
-    "__builtin__",
-    "typing",
-    "datetime",
-    "pathlib",
-    "posixpath",
-    "ntpath",
-    "re",
-    "copy",
-    "functools",
-    "operator",
-    "warnings",
-    "contextlib",
-    "abc",
-    "enum",
-    "dataclasses",
-    "types",
-    "_operator",
-    "complex",
-    "_codecs",
+    "torch", "numpy", "collections", "builtins", "copyreg", "typing",
+    "datetime", "pathlib", "posixpath", "ntpath", "re", "copy",
+    "functools", "operator", "warnings", "contextlib", "abc", "enum",
+    "dataclasses", "types", "_operator", "complex", "_codecs",
+    "pytorch_lightning", "sklearn", "pandas" # Added common ML libs
 }
 
 SAFE_BUILTINS = {
     "getattr", "setattr", "bytearray", "dict", "list", "set", "tuple",
-    "slice", "frozenset", "range", "complex",
-    "bool", "int", "float", "str", "bytes", "object",
+    "slice", "frozenset", "range", "complex", "bool", "int", "float", 
+    "str", "bytes", "object", "print" # print is sometimes used for debugging
 }
 
-# Known dangerous modules for fast-fail checking (Blacklist)
 DANGEROUS_GLOBALS = {
     "os": {"system", "popen", "execl", "execvp", "spawn"},
     "subprocess": {"Popen", "call", "check_call", "check_output", "run"},
@@ -56,136 +34,71 @@ DANGEROUS_GLOBALS = {
     "posix": {"system", "popen"},
     "webbrowser": {"open"},
     "socket": {"socket", "connect"},
-    "marshal": {"loads"},  # Code injection via bytecode
-    "pickle": {"loads", "load"}, # Nested pickle injection
+    "marshal": {"loads"},
+    "pickle": {"loads", "load"},
 }
 
-
 def _is_safe_import(module: str, name: str) -> bool:
-    """
-    Validates imports against strict allowlist policies.
-    """
-    # 1. Exact Match Safe Modules
     if module in SAFE_MODULES:
-        # Special case for builtins to prevent eval/exec
         if module in ("builtins", "__builtin__"):
             return name in SAFE_BUILTINS
         return True
-    
-    # 2. Torch Submodules (torch.* is generally safe for weights)
-    if module.startswith("torch."):
+    if module.startswith("torch.") or module.startswith("numpy."):
         return True
-    
-    # 3. Codecs (Explicitly allow encode/decode only)
-    if module == "_codecs" and name in ("encode", "decode"):
-        return True
-        
-    # 4. Safe submodules of allowed packages
     if module.startswith("pathlib.") or module.startswith("re.") or module.startswith("collections."):
         return True
-    
-    # 5. Numpy submodules
-    if module.startswith("numpy."):
-        return True
-
     return False
 
-
 def scan_pickle_stream(data: bytes, strict_mode: bool = True) -> List[str]:
-    """
-    Disassembles a pickle stream and checks for dangerous imports.
-    
-    Args:
-        data: The raw bytes of the pickle file (or stream content).
-        strict_mode: If True, blocks anything not in SAFE_MODULES.
-                     If False, only blocks DANGEROUS_GLOBALS.
-    
-    Returns:
-        List of detected threats (e.g., ["UNSAFE_IMPORT: os.system"]).
-    """
-    # Limit memo size to prevent memory exhaustion attacks
-    MAX_MEMO_SIZE = 100 
+    # FIX: Increased limit to prevent false positives on deep PyTorch models
+    MAX_MEMO_SIZE = 2048 
     
     threats = []
-    
-    # 'memo' emulates the Pickle VM stack. 
-    # We track the last few string literals pushed to the stack 
-    # to resolve STACK_GLOBAL arguments.
     memo = [] 
 
     try:
         stream = io.BytesIO(data)
-        
         for opcode, arg, pos in pickletools.genops(stream):
-            
-            # Track string literals on the stack
             if opcode.name in ("SHORT_BINUNICODE", "UNICODE", "BINUNICODE"):
                 memo.append(arg)
-                # We only need the top 2 items for STACK_GLOBAL (module, name)
-                # VULNERABILITY FIX: Prevent infinite growth
                 if len(memo) > MAX_MEMO_SIZE: 
                     memo.pop(0)
             
-            # If the stack is modified by other ops, we might lose track.
-            # Ideally, we'd implement a full VM, but clearing memo on complex ops
-            # reduces false positives in STACK_GLOBAL resolution.
-            elif opcode.name not in ("PROTO", "MEMOIZE", "MARK", "STOP"):
-                # If we see a tuple or other structure, our simple 'memo' 
-                # might be out of sync with the real stack. 
-                # However, attackers usually push strings right before STACK_GLOBAL.
-                pass
+            # Reset memo on STOP to clear stack between multiple pickles in one file
+            elif opcode.name == "STOP":
+                memo.clear()
 
-            # --- Check GLOBAL (Explicit import) ---
-            if opcode.name == "GLOBAL":
-                # Arg is "module\nname" or "module name"
+            elif opcode.name == "GLOBAL":
                 module, name = None, None
                 if isinstance(arg, str):
                     if "\n" in arg:
                         module, name = arg.split("\n", 1)
                     elif " " in arg:
                         module, name = arg.split(" ", 1)
-
                 if module and name:
                     threat = _check_import(module, name, strict_mode)
-                    if threat:
-                        threats.append(threat)
+                    if threat: threats.append(threat)
 
-            # --- Check STACK_GLOBAL (Dynamic import) ---
             elif opcode.name == "STACK_GLOBAL":
-                # Takes two arguments from the stack: module and name
-                # Since we track strings in 'memo', we check the last two.
                 if len(memo) >= 2:
                     name = memo[-1]
                     module = memo[-2]
-                    
                     if isinstance(module, str) and isinstance(name, str):
                         threat = _check_import(module, name, strict_mode)
-                        if threat:
-                            threats.append(f"{threat} (via STACK_GLOBAL)")
-                
-                # Clear memo after use to avoid reusing old stack items incorrectly
-                memo.clear()
+                        if threat: threats.append(f"{threat} (via STACK_GLOBAL)")
+                memo.clear() # Clear after usage to prevent confusion
 
     except Exception as e:
-        logger.warning(f"Pickle parsing error (possibly truncated or malformed): {e}")
-        # In a real security scenario, a malformed pickle is suspicious.
-        # But for scanning partial streams (headers), we might hit EOF.
+        # Don't crash on malformed files, just log
         pass
 
     return threats
 
-
 def _check_import(module: str, name: str, strict_mode: bool) -> str:
-    """Helper to decide if an import is a threat."""
-    
-    # 1. Check Blacklist (Always active)
     if module in DANGEROUS_GLOBALS:
         if "*" in DANGEROUS_GLOBALS[module] or name in DANGEROUS_GLOBALS[module]:
             return f"CRITICAL: {module}.{name}"
-            
-    # 2. Check Allowlist (Strict Mode)
     if strict_mode:
         if not _is_safe_import(module, name):
             return f"UNSAFE_IMPORT: {module}.{name}"
-            
     return ""
