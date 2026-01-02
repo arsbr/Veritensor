@@ -23,7 +23,7 @@ from veritensor.core.cache import HashCache
 from veritensor.engines.hashing.calculator import calculate_sha256
 from veritensor.engines.hashing.readers import get_reader_for_file 
 from veritensor.engines.static.pickle_engine import scan_pickle_stream
-from veritensor.engines.static.keras_engine import scan_keras_file
+from veritensor.engines.static.keras_engine import _keras_file
 from veritensor.engines.static.rules import is_license_restricted 
 from veritensor.integrations.cosign import sign_container, is_cosign_available, generate_key_pair
 from veritensor.integrations.huggingface import HuggingFaceClient
@@ -69,6 +69,9 @@ def scan(
     json_output: bool = typer.Option(False, "--json", help="Output results in JSON format"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed logs"),
 ):
+    """
+    Scans a model for malware, checks license compliance, verifies integrity against Hugging Face, and optionally signs the container.
+    """
     config = ConfigLoader.load()
     if verbose:
         logger.setLevel(logging.DEBUG)
