@@ -4,37 +4,32 @@ from veritensor.cli.main import app
 runner = CliRunner()
 
 def test_cli_scan_clean(clean_model_path):
-    # 1. Запуск сканера на чистом файле
-    # ВАЖНО: Добавили "scan" первым аргументом
+    # 1. Running the scanner on a clean file
+    # IMPORTANT: Added "scan"
     result = runner.invoke(app, ["scan", str(clean_model_path)])
     
-    # Отладка: если упадет, покажет вывод
-    print(result.stdout) 
-    
-    # 2. Ожидаем успех (Exit Code 0)
+    # 2. Awaiting success (Exit Code 0)
     assert result.exit_code == 0
     assert "Scan Passed" in result.stdout
 
 def test_cli_scan_infected(infected_pickle_path):
-    # 1. Запуск на вирусе
-    # ВАЖНО: Добавили "scan"
+    # 1. Running on a virus
+    # IMPORTANT: Added "scan"
     result = runner.invoke(app, ["scan", str(infected_pickle_path)])
     
-    print(result.stdout)
-
-    # 2. Ожидаем провал (Exit Code 1)
+    # 2. We expect failure (Exit Code 1)
     assert result.exit_code == 1
     assert "BLOCKING DEPLOYMENT" in result.stdout
-    # Проверяем наличие одной из ключевых фраз угрозы
-    assert "CRITICAL" in result.stdout or "UNSAFE_IMPORT" in result.stdout
+    assert "CRITICAL" in result.stdout
 
 def test_cli_break_glass(infected_pickle_path):
-    # 1. Запуск на вирусе, но с флагом --force
-    # ВАЖНО: Добавили "scan"
+    # 1. Running on a virus, but with the --force flag
+    # IMPORTANT: Added "scan"
     result = runner.invoke(app, ["scan", str(infected_pickle_path), "--force"])
     
     print(result.stdout)
-
-    # 2. Ожидаем успех (Exit Code 0), но с предупреждением
+    
+    # 2. We expect success (Exit Code 0), but with a warning
     assert result.exit_code == 0
-    assert "Break-glass mode enabled" in result.stdout
+    # FIXED: Now we check the current message from main.py
+    assert "RISKS DETECTED (Force Approved)" in result.stdout
