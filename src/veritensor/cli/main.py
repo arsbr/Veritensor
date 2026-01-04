@@ -3,6 +3,7 @@
 # The Main CLI Entry Point.
 # Orchestrates: Config -> Scan -> Verify -> Sign.
 
+
 import sys
 import typer
 import logging
@@ -76,7 +77,7 @@ def scan(
         logger.setLevel(logging.DEBUG)
 
     if not json_output:
-        console.print(Panel.fit(f"🛡️  [bold cyan]Veritensor Security Scanner[/bold cyan] v1.0.4", border_style="cyan"))
+        console.print(Panel.fit(f"🛡️  [bold cyan]Veritensor Security Scanner[/bold cyan] v1.0.5", border_style="cyan"))
 
     files_to_scan = []
     if path.is_file():
@@ -142,16 +143,20 @@ def scan(
                 for t in threats:
                     scan_res.add_threat(t)
 
-            # --- C. License Check ---
+            # --- C. License Check (FIXED in v1.0.5) ---
             reader = get_reader_for_file(file_path)
             if reader:
-                metadata = reader.read_metadata(file_path)
+                # Read full file structure (format, metadata, tensor_count)
+                file_info = reader.read_metadata(file_path)
                 
-                # Check for parsing errors
-                if "error" in metadata:
-                     scan_res.add_threat(f"MEDIUM: Metadata parse error: {metadata['error']}")
+                if "error" in file_info:
+                     scan_res.add_threat(f"MEDIUM: Metadata parse error: {file_info['error']}")
                 else:
-                    license_str = metadata.get("license", None)
+                    # [FIX] Extract nested metadata dictionary
+                    meta_dict = file_info.get("metadata", {})
+                    # Safely retrieve license (can be None)
+                    license_str = meta_dict.get("license", None)
+                    
                     is_whitelisted = repo and (repo in config.allowed_models)
                     
                     if not is_whitelisted:
@@ -164,9 +169,8 @@ def scan(
                         elif is_license_restricted(license_str, config.custom_restricted_licenses):
                             scan_res.add_threat(f"HIGH: Restricted license detected: '{license_str}'")
 
-            # --- D. Policy Check (Updated) ---
+            # --- D. Policy Check ---
             if scan_res.status == "FAIL":
-                # Check if any threat exceeds the configured severity threshold
                 if check_severity(scan_res.threats, config.fail_on_severity):
                     has_blocking_errors = True
 
@@ -249,7 +253,7 @@ def version():
     """
     Show version info.
     """
-    console.print("Veritensor v1.1.1 (Community Edition)")
+    console.print("Veritensor v1.0.5 (Community Edition)")
 
 if __name__ == "__main__":
     app()
