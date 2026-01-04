@@ -151,32 +151,45 @@ repos:
 
 ## ⚙️ Configuration
 
-You can customize policies by creating a veritensor.yaml file in your project root:
+You can customize security policies by creating a `veritensor.yaml` file in your project root:
+
 ```yaml
 # veritensor.yaml
 
-# Minimum severity to fail the build (CRITICAL, HIGH, MEDIUM, LOW)
+# 1. Security Threshold
+# Fail the build if threats of this severity (or higher) are found.
+# Options: CRITICAL, HIGH, MEDIUM, LOW.
 fail_on_severity: CRITICAL
 
-# License Policy
+# 2. License Firewall Policy
+# If true, blocks models that have no license metadata.
 fail_on_missing_license: false
+
+# List of license keywords to block (case-insensitive).
 custom_restricted_licenses:
-  - "cc-by-nc"
-  - "agpl"
+  - "cc-by-nc"       # Non-Commercial
+  - "agpl"           # Viral licenses
   - "research-only"
 
-# Allow specific modules that are usually blocked (Allowlist)
+# 3. Static Analysis Exceptions (Pickle)
+# Allow specific Python modules that are usually blocked by the strict scanner.
+# Use this if your internal model uses custom layers or libraries.
 allowed_modules:
   - "my_company.internal_layer"
   - "sklearn.tree"
 
-# Whitelist specific models (skip license checks for them)
+# 4. Model Whitelist (License Bypass)
+# List of Repo IDs that are trusted. Veritensor will SKIP license checks for these.
+# Useful for:
+# - Commercial models you have purchased rights for.
+# - Internal private models (e.g., "internal/corp-model").
 allowed_models:
   - "meta-llama/Meta-Llama-3-70B-Instruct"
+  - "internal/my-private-model"
 ```
 
 ---
 
 ## 📜 License
 
-This project is licensed under the Apache 2.0 License - see the LICENSE file for details.
+This project is licensed under the Apache 2.0 License - see the [LICENSE](https://github.com/ArseniiBrazhnyk/Veritensor?tab=Apache-2.0-1-ov-file#readme) file for details.
