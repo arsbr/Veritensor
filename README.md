@@ -118,7 +118,7 @@ jobs:
       - uses: actions/checkout@v3
       
       - name: Scan Models
-        uses: ArseniiBrazhnyk/Veritensor@v1
+        uses: ArseniiBrazhnyk/Veritensor@v1.1.2
         with:
           path: './models'
           repo: 'meta-llama/Llama-2-7b' # Optional: Verify integrity
