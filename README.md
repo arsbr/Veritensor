@@ -21,9 +21,9 @@ Unlike standard antiviruses, Veritensor understands AI formats (**Pickle, PyTorc
 
 *   **Deep Static Analysis:** Decompiles Pickle bytecode and Keras Lambda layers to find obfuscated attacks (e.g., `STACK_GLOBAL` exploits).
 *   **Identity Verification:** Automatically verifies model hashes against the official Hugging Face registry to detect Man-in-the-Middle attacks.
-*   **Supply Chain Security:** Integrates with **Sigstore Cosign** to sign Docker containers only if the model inside is clean.
-*   **CI/CD Native:** Ready for GitHub Actions, GitLab, and Pre-commit pipelines.
 *   **License Firewall:** Blocks models with restrictive licenses (Non-Commercial, Research-Only) from entering your production pipeline.
+*   **Supply Chain Security:** Integrates with **Sigstore Cosign** to sign Docker containers. Includes **timestamps** to prevent replay attacks.
+*   **CI/CD Native:** Ready for GitHub Actions, GitLab, and Pre-commit pipelines.
 
 ---
 
@@ -173,18 +173,16 @@ custom_restricted_licenses:
 
 # 3. Static Analysis Exceptions (Pickle)
 # Allow specific Python modules that are usually blocked by the strict scanner.
-# Use this if your internal model uses custom layers or libraries.
 allowed_modules:
   - "my_company.internal_layer"
   - "sklearn.tree"
 
 # 4. Model Whitelist (License Bypass)
 # List of Repo IDs that are trusted. Veritensor will SKIP license checks for these.
-# Useful for:
-# - Commercial models you have purchased rights for.
-# - Internal private models (e.g., "internal/corp-model").
+# Supports Regex!
 allowed_models:
-  - "meta-llama/Meta-Llama-3-70B-Instruct"
+  - "meta-llama/Meta-Llama-3-70B-Instruct"  # Exact match
+  - "regex:^google-bert/.*"                 # Allow all BERT models from Google
   - "internal/my-private-model"
 ```
 
