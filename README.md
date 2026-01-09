@@ -151,7 +151,8 @@ repos:
 
 ## ⚙️ Configuration
 
-You can customize security policies by creating a `veritensor.yaml` file in your project root:
+You can customize security policies by creating a `veritensor.yaml` file in your project root.
+Pro Tip: You can use `regex:` prefix for flexible matching.
 
 ```yaml
 # veritensor.yaml
