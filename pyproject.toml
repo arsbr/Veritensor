@@ -52,3 +52,6 @@ veritensor = "veritensor.cli.main:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+veritensor = ["**/*.yaml"]
