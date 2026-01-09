@@ -1,5 +1,5 @@
 # 🛡️ Veritensor Configuration File
-# This file controls security policies and scanner behavior.
+# This file controls security policies, license checks, and scanner behavior.
 
 # --- General Settings ---
 
@@ -12,17 +12,46 @@ fail_on_severity: "CRITICAL"
 # Options: table (for humans), json (for scripts), sarif (for GitHub Security)
 output_format: "table"
 
+# --- License Firewall (New) ---
+
+# Should the build fail if the model has NO license metadata?
+# true = FAIL, false = WARNING (Default)
+fail_on_missing_license: false
+
+# List of restricted license patterns.
+# Supports simple substrings (case-insensitive) and Regex.
+custom_restricted_licenses:
+  - "cc-by-nc"          # Blocks Non-Commercial
+  - "research-only"     # Blocks Research Only
+  # Regex example: Block any version of AGPL (v1, v3, etc.)
+  - "regex:^agpl.*" 
+
+# --- Model Whitelist (Identity) ---
+
+# List of repositories that are trusted regardless of their license.
+# Useful for internal models or specific approved external models.
+# Supports "regex:" or "pattern:" prefix for advanced matching.
+allowed_models:
+  # Simple substring match (allows specific model)
+  - "google-bert/bert-base-uncased"
+  
+  # Regex match: Allow ALL models from "meta-llama" organization
+  - "regex:^meta-llama/.*"
+  
+  # Regex match: Allow specific version pattern (e.g., v1.0 to v1.9)
+  - "pattern:my-org/internal-model-v1\.[0-9]"
+
 # --- Security Policies (Pickle/PyTorch) ---
 
 # List of additional Python modules that are trusted during deserialization.
 # Veritensor already trusts standard ML libraries (torch, numpy, collections).
-# Add your internal company libraries or extra data science libs here.
 allowed_modules:
   - "pandas"
   - "scipy"
   - "sklearn"
   - "tqdm"
-  # - "my_company.internal_layer"
+  # Regex works here too! Allow all submodules of my_company
+  # - "regex:^my_company\..*"
 
 # --- Exceptions (False Positives) ---
 
