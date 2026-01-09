@@ -1,51 +1,155 @@
 version: "2026.01.09"
-description: "Default security signatures for Veritensor"
+description: "Comprehensive security signatures (RCE, Cloud Theft, Exfiltration, MLOps abuse)"
 
+# --- 1. Unsafe Modules & Functions (Import Blocklist) ---
 unsafe_globals:
   CRITICAL:
+    # --- Core Execution & Internals ---
     __builtin__:
       - eval
       - compile
       - getattr
+      - setattr
       - apply
       - exec
       - open
       - breakpoint
       - __import__
+      - input
     builtins:
       - eval
       - compile
       - getattr
+      - setattr
       - apply
       - exec
       - open
       - breakpoint
       - __import__
+      - input
     runpy: "*"
     os: "*"
-    nt: "*"
-    posix: "*"
-    socket: "*"
+    nt: "*"       # Windows OS alias
+    posix: "*"    # Linux OS alias
     subprocess: "*"
     sys: "*"
+    
+    # --- Reverse Shells & Terminals ---
     pty: "*"
+    tty: "*"
+    code: "*"     # code.InteractiveConsole
+    
+    # --- Serialization Bombs ---
     pickle: "*"
     _pickle: "*"
+    marshal: "*"  # Executing raw bytecode
+    shelve: "*"
+    dbm: "*"
+    jsonpickle: "*"
+    yaml:
+      - load      # Unsafe YAML loading
+      - unsafe_load
+    ruamel.yaml: "*"
+    
+    # --- Low Level & C-Interface (Sandbox Escape) ---
+    ctypes: "*"
+    _ctypes: "*"
+    cffi: "*"
+    dll: "*"
+    dlopen: "*"
+    CDLL: "*"
+    PyDLL: "*"
+    
+    # --- Dangerous Gadgets ---
+    operator:
+      - attrgetter # Used to chain calls: attrgetter("system")(os)("ls")
+    
+    # --- Debuggers (Can execute code) ---
     bdb: "*"
     pdb: "*"
-    shutil: "*"
-    asyncio: "*"
-    marshal: "*"
-    operator:
-      - attrgetter
+    ipdb: "*"
+    tracemalloc: "*"
 
   HIGH:
+    # --- Network & Data Exfiltration ---
+    socket: "*"
+    ssl: "*"
+    asyncio: "*"
+    ftplib: "*"
+    smtplib: "*"  # Sending spam/phishing
+    poplib: "*"
+    imaplib: "*"
+    
+    # --- HTTP Libraries (Calling home) ---
     webbrowser: "*"
     httplib: "*"
+    http: "*"
+    requests: "*"
     requests.api: "*"
-    aiohttp.client: "*"
+    aiohttp: "*"
     urllib: "*"
     urllib2: "*"
+    urllib3: "*"
+    websocket: "*"
+    websocket_client: "*"
+    dnspython: "*" # DNS tunneling exfiltration
+    dns: "*"
+    
+    # --- Cloud SDKs (Credential Theft) ---
+    # Models should NEVER import these
+    boto3: "*"
+    botocore: "*"
+    google.cloud: "*"
+    google.auth: "*"
+    azure: "*"
+    s3fs: "*"
+    
+    # --- SSH & Remote Access ---
+    paramiko: "*"
+    pysftp: "*"
+    fabric: "*"
+    
+    # --- Secrets & Environment Access ---
+    dotenv: "*"
+    python_dotenv: "*"
+    keyring: "*"
+    secrets: "*"
+    getpass: "*"
+    platform: "*" # Reconnaissance
+    
+    # --- MLOps Tools Abuse (Can upload data) ---
+    wandb: "*"
+    mlflow: "*"
+    huggingface_hub: "*" # Can download other malware
+    dvc: "*"
+    sagemaker: "*"
+    kubernetes: "*"
 
-  MEDIUM: {}
+  MEDIUM:
+    # --- Potentially Unwanted ---
+    tempfile: "*" # Dropping payloads to disk
+    zipfile: "*"  # Zip bombs or extraction
+    tarfile: "*"
+    argparse: "*"
+    shutil: "*"
+    glob: "*"     # File system scanning
+    IPython: "*"  # Notebook execution
+
   LOW: {}
+
+# --- 2. Suspicious Strings (Heuristics) ---
+# These are checked against string constants found in the pickle stack.
+# Used to detect hardcoded paths to secrets or env vars.
+suspicious_strings:
+  - "/etc/passwd"
+  - "/etc/shadow"
+  - ".ssh/id_rsa"
+  - ".aws/credentials"
+  - ".aws/config"
+  - "AWS_ACCESS_KEY_ID"
+  - "AWS_SECRET_ACCESS_KEY"
+  - "OPENAI_API_KEY"
+  - "169.254.169.254" # AWS Metadata IP
+  - "metadata.google.internal"
+  - "ngrok"
+  - "pastebin"
