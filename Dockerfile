@@ -2,7 +2,9 @@
 FROM python:3.11-slim-bookworm
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get upgrade -y && \
+    apt-get install -y curl git && \
+    rm -rf /var/lib/apt/lists/*
 
 # --- Install Cosign (Sigstore) ---
 RUN LATEST_VERSION=$(curl -s https://api.github.com/repos/sigstore/cosign/releases/latest | grep tag_name | cut -d '"' -f 4) && \
