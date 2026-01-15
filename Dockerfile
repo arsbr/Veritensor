@@ -21,6 +21,7 @@ COPY pyproject.toml .
 # Create dummy package structure to allow installing dependencies
 # before the actual code is copied. This speeds up re-builds.
 RUN mkdir -p src/veritensor && touch src/veritensor/__init__.py
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir .
 
 # [FIXED] Copy source code from ROOT (removed 'scanner/')
