@@ -3,6 +3,7 @@
 # This module interacts with the Hugging Face Hub API.
 # It verifies if a local file's hash matches the official record in the Hub.
 
+
 import requests
 import logging
 from typing import Optional, Dict, Any
@@ -38,14 +39,25 @@ class HuggingFaceClient:
         
         return None
 
+    def get_model_license(self, repo_id: str) -> Optional[str]:
+        """
+        Fetches license information from the Hugging Face Model Card (API).
+        """
+        info = self.get_model_info(repo_id)
+        if not info:
+            return None
+        
+        # License can be in 'cardData' -> 'license' or in root 'license'
+        license_info = info.get("cardData", {}).get("license")
+        
+        if not license_info:
+            license_info = info.get("license")
+            
+        return license_info
+
     def verify_file_hash(self, repo_id: str, filename: str, local_sha256: str) -> str:
         """
         Verifies if the local file hash matches the remote file in the repo.
-        
-        Returns:
-            "VERIFIED": Hash matches exactly.
-            "MISMATCH": File exists but hash is different (Tampering risk).
-            "UNKNOWN": File not found in repo or repo inaccessible.
         """
         model_info = self.get_model_info(repo_id)
         if not model_info:
@@ -61,10 +73,7 @@ class HuggingFaceClient:
                 break
         
         if not remote_file_info:
-            # Collecting a list of available files for a hint
             available_files = [f.get("rfilename") for f in siblings]
-            
-            # We form a string (the first 5 files)
             preview = ", ".join(available_files[:5])
             if len(available_files) > 5:
                 preview += "..."
@@ -72,15 +81,13 @@ class HuggingFaceClient:
             logger.warning(f"File '{filename}' not found in remote repo '{repo_id}'.")
             logger.warning(f"Available files in repo: [{preview}]")
             return "UNKNOWN"
+
         remote_hash = None 
         # Case 1: LFS Object
         if "lfs" in remote_file_info:
             remote_hash = remote_file_info["lfs"].get("oid") 
         
-        # Case 2: Regular file (sometimes sha256 is not explicitly listed in basic call)
-        # In a robust implementation, we would call /api/models/{repo_id}/paths-info/main
-        # Let's implement a fallback to paths-info for better accuracy.
-        
+        # Case 2: Regular file fallback
         if not remote_hash:
             return self._verify_via_paths_info(repo_id, filename, local_sha256)
 
@@ -92,7 +99,7 @@ class HuggingFaceClient:
 
     def _verify_via_paths_info(self, repo_id: str, filename: str, local_sha256: str) -> str:
         """
-        Fallback method using the paths-info endpoint which provides detailed LFS info.
+        Fallback method using the paths-info endpoint.
         """
         url = f"{HF_API_BASE}/{repo_id}/paths-info/main"
         try:
@@ -100,9 +107,7 @@ class HuggingFaceClient:
             if resp.status_code == 200:
                 data = resp.json()
                 if len(data) > 0:
-                    # data is list of dicts.
                     info = data[0]
-                    # Check LFS
                     if "lfs" in info and info["lfs"]:
                         remote_hash = info["lfs"]["oid"]
                         if remote_hash == local_sha256:
