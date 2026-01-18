@@ -16,13 +16,28 @@ from veritensor.engines.static.rules import get_severity
 
 logger = logging.getLogger(__name__)
 
-# --- Security Policies (Allowlist) ---
 SAFE_MODULES = {
-    "torch", "numpy", "collections", "builtins", "copyreg", "typing",
-    "datetime", "pathlib", "posixpath", "ntpath", "re", "copy",
-    "functools", "operator", "warnings", "contextlib", "abc", "enum",
-    "dataclasses", "types", "_operator", "complex", "_codecs",
-    "pytorch_lightning", "sklearn", "pandas", "scipy"
+    # --- Standard Python Libs ---
+    "builtins", "copyreg", "typing", "collections", "datetime",
+    "pathlib", "posixpath", "ntpath", "re", "copy", "functools",
+    "operator", "warnings", "contextlib", "abc", "enum", "dataclasses",
+    "types", "_operator", "complex", "_codecs", "math", "random", "itertools",
+    "__builtin__", # Python 2 compatibility
+    
+    # --- Scientific Computing & ML Core ---
+    "torch", "numpy", "scipy", "pandas", "sklearn", "joblib",
+    
+    # --- Deep Learning Frameworks ---
+    "pytorch_lightning", "jax", "flax", "tensorflow", "keras",
+    
+    # --- Hugging Face Ecosystem ---
+    "transformers", "tokenizers", "datasets", "safetensors", "huggingface_hub",
+    
+    # --- Computer Vision ---
+    "PIL", "torchvision",
+    
+    # --- Configs & Utils ---
+    "omegaconf", "tqdm"
 }
 
 SAFE_BUILTINS = {
