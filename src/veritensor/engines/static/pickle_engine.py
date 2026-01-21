@@ -3,7 +3,7 @@
 #
 # This engine performs static analysis of Pickle bytecode.
 # It emulates the Pickle VM stack to detect obfuscated calls (STACK_GLOBAL)
-# and scans for suspicious string constants (secrets/paths).
+# and scans for suspicious string constants (secrets/paths) using Regex signatures.
 
 import pickletools
 import io
@@ -11,11 +11,14 @@ import logging
 import zipfile  
 from typing import List
 
-# Import dynamic rules loader
-from veritensor.engines.static.rules import get_severity
+# Import dynamic rules loader and regex matcher
+from veritensor.engines.static.rules import get_severity, SignatureLoader, is_match
 
 logger = logging.getLogger(__name__)
 
+# --- Security Policies (Allowlist) ---
+# Used only when strict_mode=True.
+# We keep the allowlist hardcoded here as it defines the "Safe Baseline" for ML models.
 SAFE_MODULES = {
     # --- Standard Python Libs ---
     "builtins", "copyreg", "typing", "collections", "datetime",
@@ -46,17 +49,6 @@ SAFE_BUILTINS = {
     "str", "bytes", "object", "print"
 }
 
-SUSPICIOUS_STRINGS = [
-    "/etc/passwd", "/etc/shadow", 
-    ".ssh/id_rsa", ".ssh/known_hosts",
-    ".aws/credentials", ".aws/config",
-    "AWS_ACCESS_KEY", "AWS_SECRET_ACCESS_KEY",
-    "OPENAI_API_KEY", "HF_TOKEN",
-    "169.254.169.254",
-    "metadata.google.internal",
-    "ngrok", "pastebin"
-]
-
 def _is_safe_import(module: str, name: str) -> bool:
     """Checks if the module is in the strict allowlist."""
     
@@ -65,6 +57,7 @@ def _is_safe_import(module: str, name: str) -> bool:
             return name in SAFE_BUILTINS
         return True
     
+    # Allow submodules (e.g. torch.nn)
     base_module = module.split(".")[0]
     if base_module in SAFE_MODULES and base_module not in ("builtins", "__builtin__"):
         return True
@@ -76,31 +69,52 @@ def _is_safe_import(module: str, name: str) -> bool:
 
 def scan_pickle_stream(data: bytes, strict_mode: bool = True) -> List[str]:
     """
-    Disassembles a pickle stream (or PyTorch Zip) and checks for dangerous imports.
+    Disassembles a pickle stream (or Zip/Wheel) and checks for dangerous imports.
     """
     threats = []
     
-# --- PyTorch Zip Handling ---
+    # Load signatures dynamically from YAML
+    suspicious_patterns = SignatureLoader.get_suspicious_strings()
+    
+    # --- Zip / Wheel / PyTorch Handling ---
+    # Checks magic bytes for ZIP (PK..)
     if data.startswith(b'PK'):
         try:
             with zipfile.ZipFile(io.BytesIO(data), 'r') as z:
+                file_list = z.namelist()
 
-                pickle_files = [n for n in z.namelist() if n.endswith('.pkl') or 'data' in n]
+                # 1. Look for Pickle files (Standard PyTorch/Pickle attack)
+                pickle_files = [n for n in file_list if n.endswith('.pkl') or 'data' in n]
                 
-                if not pickle_files:
+                # 2. Look for Python scripts (Wheel/Source distribution attack)
+                # We scan setup.py, __init__.py, etc. for secrets or suspicious commands
+                script_files = [n for n in file_list if n.endswith('.py')]
 
-                    pass
-                
+                # Scan Pickles recursively
                 for pkl_name in pickle_files:
                     try:
                         with z.open(pkl_name) as f:
-        
                             inner_data = f.read()
-                       
                             threats.extend(scan_pickle_stream(inner_data, strict_mode))
                     except Exception:
                         continue
-            
+
+                # Scan Scripts (Heuristics)
+                for script_name in script_files:
+                    try:
+                        with z.open(script_name) as f:
+                            # Read text content (limit 1MB per script to avoid DoS)
+                            content = f.read(1024 * 1024).decode('utf-8', errors='ignore')
+                            
+                            # Check against suspicious patterns using Regex matcher
+                            if is_match(content, suspicious_patterns):
+                                # Identify which pattern matched for better reporting
+                                for pat in suspicious_patterns:
+                                    if is_match(content, [pat]):
+                                        threats.append(f"HIGH: Suspicious string in {script_name}: '{pat}'")
+                                        break
+                    except Exception:
+                        continue
 
             return list(set(threats)) 
             
@@ -115,19 +129,27 @@ def scan_pickle_stream(data: bytes, strict_mode: bool = True) -> List[str]:
         stream = io.BytesIO(data)
         for opcode, arg, pos in pickletools.genops(stream):
             
+            # Track string literals on the stack
             if opcode.name in ("SHORT_BINUNICODE", "UNICODE", "BINUNICODE"):
                 memo.append(arg)
                 if len(memo) > MAX_MEMO_SIZE: 
                     memo.pop(0)
                 
-                if isinstance(arg, str):
-                    for pattern in SUSPICIOUS_STRINGS:
-                        if pattern in arg:
-                            threats.append(f"HIGH: Suspicious string detected: '{arg}'")
+                # Check suspicious strings in pickle constants
+                if isinstance(arg, str) and suspicious_patterns:
+                    if is_match(arg, suspicious_patterns):
+                         for pat in suspicious_patterns:
+                            if is_match(arg, [pat]):
+                                # Truncate long strings in logs
+                                safe_arg = arg[:50] + "..." if len(arg) > 50 else arg
+                                threats.append(f"HIGH: Suspicious string detected: '{pat}' in '{safe_arg}'")
+                                break
 
+            # Reset memo on STOP to clear stack between multiple pickles in one file
             elif opcode.name == "STOP":
                 memo.clear()
 
+            # Check GLOBAL (Explicit import)
             elif opcode.name == "GLOBAL":
                 module, name = None, None
                 if isinstance(arg, str):
@@ -140,6 +162,7 @@ def scan_pickle_stream(data: bytes, strict_mode: bool = True) -> List[str]:
                     threat = _check_import(module, name, strict_mode)
                     if threat: threats.append(threat)
 
+            # Check STACK_GLOBAL (Dynamic import)
             elif opcode.name == "STACK_GLOBAL":
                 if len(memo) >= 2:
                     name = memo[-1]
@@ -150,16 +173,21 @@ def scan_pickle_stream(data: bytes, strict_mode: bool = True) -> List[str]:
                 memo.clear() 
 
     except Exception as e:
-  
+        # If pickletools crashes, it might not be a pickle file
         pass
 
     return threats
 
 def _check_import(module: str, name: str, strict_mode: bool) -> str:
+    """
+    Decides if an import is a threat using Blocklist (rules.py) and Allowlist.
+    """
+    # 1. Check Blocklist (Signatures from rules.py/signatures.yaml)
     severity = get_severity(module, name)
     if severity:
         return f"{severity}: {module}.{name}"
 
+    # 2. Check Allowlist (Strict Mode)
     if strict_mode:
         if not _is_safe_import(module, name):
             return f"UNSAFE_IMPORT: {module}.{name}"
