@@ -205,7 +205,7 @@ def get_reader_for_file(file_path: Path) -> Optional[ModelReader]:
         return SafetensorsReader()
     elif ext == ".gguf":
         return GGUFReader()
-    elif ext in [".pt", ".pth", ".bin", ".ckpt"]:
+    elif ext in [".pt", ".pth", ".bin", ".ckpt", ".whl"]:
         # Check if it's a zip (modern pytorch) or legacy
         if zipfile.is_zipfile(file_path):
             return PyTorchZipReader()
