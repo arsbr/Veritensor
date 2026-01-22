@@ -49,7 +49,9 @@ DEFAULT_UNSAFE_GLOBALS = {
 DEFAULT_SUSPICIOUS_STRINGS = [
     "/etc/passwd", 
     "AWS_ACCESS_KEY_ID", 
-    "OPENAI_API_KEY"
+    "OPENAI_API_KEY",
+    "curl",
+    "wget"
 ]
 
 DEFAULT_RESTRICTED_LICENSES = [
