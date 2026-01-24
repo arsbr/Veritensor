@@ -19,6 +19,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from veritensor.core.config import ConfigLoader
 from veritensor.core.types import ScanResult
 from veritensor.core.cache import HashCache
+from veritensor.core.streaming import get_stream_for_path
 from veritensor.engines.hashing.calculator import calculate_sha256
 from veritensor.engines.hashing.readers import get_reader_for_file 
 from veritensor.engines.static.pickle_engine import scan_pickle_stream
@@ -149,7 +150,7 @@ def scan(
             threats = []
             if ext in PICKLE_EXTS:
                 try:
-                    with open(file_path, "rb") as f:
+                    with get_stream_for_path(str(file_path)) as f:
                         content = f.read() 
                         threats = scan_pickle_stream(content, strict_mode=True)
                 except Exception as e:
