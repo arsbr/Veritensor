@@ -44,12 +44,6 @@ def sign_container(
         "-y"  # Skip confirmation prompts
     ]
 
-
-    # Handle Transparency Log (Rekor)
-    # We disable this by default to prevent leaking enterprise metadata to public logs.
-    if not tlog_upload:
-        cmd.append("--tlog-upload=false")
-
     # Add Annotations
     if annotations:
         for key, value in annotations.items():
