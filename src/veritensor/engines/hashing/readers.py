@@ -14,6 +14,7 @@ from pathlib import Path
 # --- Constants ---
 GGUF_MAGIC = 0x46554747  # "GGUF" in little-endian
 GGUF_DEFAULT_ALIGNMENT = 32
+MAX_HEADER_SIZE = 100 * 1024 * 1024 # 100 MB Limit for Safetensors header
 
 # Mapping GGUF value types to Python types (subset needed for metadata)
 # Ref: gguf-py/constants.py
@@ -58,8 +59,8 @@ class SafetensorsReader(ModelReader):
                 header_len = struct.unpack('<Q', length_bytes)[0]
                 
                 # Safety check: Header shouldn't be absurdly large (e.g., > 100MB)
-                if header_len > 100 * 1024 * 1024:
-                    return {"error": f"Header too large: {header_len} bytes"}
+                if header_len > MAX_HEADER_SIZE:
+                    return {"error": f"Header too large ({header_len} bytes). Possible DoS attack or corrupted file."}
 
                 # Read the JSON header
                 header_json_bytes = f.read(header_len)
@@ -86,7 +87,7 @@ class PyTorchZipReader(ModelReader):
     def read_metadata(self, file_path: Path) -> Dict[str, Any]:
         try:
             if not zipfile.is_zipfile(file_path):
-                return {"format": "pytorch_legacy", "note": "Not a zip file (likely legacy pickle)"}
+                return {"format": "pytorch_legacy", "note": "Not a zip file"}
 
             with zipfile.ZipFile(file_path, 'r') as z:
                 file_list = z.namelist()
@@ -101,7 +102,6 @@ class PyTorchZipReader(ModelReader):
                     "is_valid_structure": has_data_pkl and has_version
                 }
         except Exception as e:
-            logger.error(f"Failed to read pytorch zip {file_path}: {e}")
             return {"error": str(e)}
 
 
