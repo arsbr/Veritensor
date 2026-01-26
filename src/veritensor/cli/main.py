@@ -8,6 +8,7 @@ import logging
 import json
 import os
 import datetime
+import requests
 from pathlib import Path
 from typing import Optional, List
 from rich.console import Console
