@@ -82,20 +82,22 @@ def scan_pickle_stream(data: Union[bytes, BinaryIO], strict_mode: bool = True) -
         stream = data
 
     # Check for Zip file (PK header)
-    # We peek or read/seek to check magic bytes
-    start_pos = stream.tell()
-    try:
-        header = stream.read(4)
-        stream.seek(start_pos) # Reset cursor
-    except Exception:
-        # If stream is not seekable (e.g. pipe), assume standard pickle if not bytes
-        header = b""
+    # We only try to read/seek if the stream supports it.
+    # ZipExtFile (used in recursive scan) is NOT seekable, so we skip this check for inner files.
+    header = b""
+    if hasattr(stream, "seekable") and stream.seekable():
+        try:
+            start_pos = stream.tell()
+            header = stream.read(4)
+            stream.seek(start_pos) # Reset cursor
+        except Exception:
+            # If stream is not seekable (e.g. pipe), assume standard pickle
+            header = b""
 
     # --- Zip / Wheel / PyTorch Handling ---
     if header.startswith(b'PK'):
         try:
             # zipfile.ZipFile requires a seekable file. 
-            # If stream is from RemoteStream (streaming.py), it supports seek.
             with zipfile.ZipFile(stream, 'r') as z:
                 file_list = z.namelist()
 
@@ -109,7 +111,8 @@ def scan_pickle_stream(data: Union[bytes, BinaryIO], strict_mode: bool = True) -
                 for pkl_name in pickle_files:
                     try:
                         with z.open(pkl_name) as f:
-                            # Recursive call. ZipExtFile is file-like, so this works efficiently.
+                            # Recursive call. ZipExtFile is file-like but not seekable.
+                            # The logic above handles this by skipping the PK check.
                             threats.extend(scan_pickle_stream(f, strict_mode))
                     except Exception:
                         continue
@@ -140,11 +143,12 @@ def scan_pickle_stream(data: Union[bytes, BinaryIO], strict_mode: bool = True) -
             pass
 
     # --- Standard Pickle Scanning ---
-    # Reset stream again just in case
-    try:
-        stream.seek(start_pos)
-    except Exception:
-        pass
+    # Ensure stream is at start if we moved it (only if seekable)
+    if hasattr(stream, "seekable") and stream.seekable():
+        try:
+            stream.seek(start_pos)
+        except Exception:
+            pass
 
     MAX_MEMO_SIZE = 2048 
     memo = [] 
