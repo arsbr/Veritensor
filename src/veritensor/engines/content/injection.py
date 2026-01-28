@@ -12,24 +12,24 @@ logger = logging.getLogger(__name__)
 TEXT_EXTENSIONS = {".txt", ".md", ".json", ".csv", ".xml", ".yaml", ".yml"}
 
 def scan_text_file(file_path: Path) -> List[str]:
-    """
-    Scans a text file for Prompt Injection patterns.
-    """
     threats = []
+    signatures = SignatureLoader.get_prompt_injections()
+    
     try:
-        # Limit read size to 5MB to prevent DoS
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            content = f.read(5 * 1024 * 1024)
-            
-        signatures = SignatureLoader.get_prompt_injections()
-        
-        if is_match(content, signatures):
-            # Find specific matches for reporting
-            for pattern in signatures:
-                if is_match(content, [pattern]):
-                    threats.append(f"HIGH: Prompt Injection detected: '{pattern}'")
-                    
+            for i, line in enumerate(f):
+               
+                if len(line) > 4096: 
+                    line = line[:4096] 
+                
+                if is_match(line, signatures):
+                    for pattern in signatures:
+                        if is_match(line, [pattern]):
+                            threats.append(f"HIGH: Prompt Injection detected (line {i+1}): '{pattern}'")
+                            return threats # Fail fast
+                            
     except Exception as e:
         logger.warning(f"Failed to scan text file {file_path}: {e}")
         
     return threats
+
