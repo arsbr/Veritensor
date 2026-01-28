@@ -139,6 +139,7 @@ def scan(
             # Convert to string for processing, keep Path object for local file ops if needed
             file_path_str = str(file_path)
             file_name = file_path.name
+            filename_lower = file_name.lower() # Checking Dockerfile
             ext = "".join(file_path.suffixes).lower() # Handle .tar.gz etc if needed, usually just .suffix
             if not ext: ext = file_path.suffix.lower()
 
@@ -204,7 +205,7 @@ def scan(
                     for t in threats: scan_res.add_threat(t)
             
             # 3. RAG / Text Files (New)
-            elif ext in TEXT_EXTENSIONS:
+            elif ext in TEXT_EXTENSIONS or filename_lower == "dockerfile":
                 if file_path_str.startswith("s3://"):
                      scan_res.add_threat("WARNING: S3 scanning not supported for Text files yet.")
                 else:
