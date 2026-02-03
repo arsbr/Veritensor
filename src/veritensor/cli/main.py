@@ -33,6 +33,7 @@ from veritensor.engines.content.injection import scan_text_file, TEXT_EXTENSIONS
 # --- Reporting Modules ---
 from veritensor.reporting.sarif import generate_sarif_report
 from veritensor.reporting.sbom import generate_sbom
+from veritensor.reporting.telemetry import send_report 
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("veritensor")
@@ -89,6 +90,10 @@ def scan(
     sarif_output: bool = typer.Option(False, "--sarif", help="Output SARIF (GitHub Security)"),
     sbom_output: bool = typer.Option(False, "--sbom", help="Output CycloneDX SBOM"),
 
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed logs"),
+
+    report_to: Optional[str] = typer.Option(None, help="URL to send scan report (Enterprise feature)"),
+    api_key: Optional[str] = typer.Option(None, envvar="VERITENSOR_API_KEY", help="API Key for reporting"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed logs"),
 ):
     """
@@ -281,6 +286,14 @@ def scan(
     else:
         _print_table(results)
 
+    # --- Telemetry ---
+    # Send the report regardless of whether it was scanned or dropped.
+    if report_to or config.report_url:
+        if not is_machine_output:
+            console.print(f"[dim]📡 Sending telemetry...[/dim]")
+        
+        send_report(results, config, override_url=report_to, override_key=api_key)
+    
     # --- Decision Logic ---
     exit_code = 0
     sign_status = "clean"
@@ -317,6 +330,20 @@ def scan(
         
         scan_timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
         _perform_signing(image, sign_status, config, scan_timestamp, results)
+
+     # --- Telemetry / Reporting ---
+    '''if report_to:
+        if not api_key:
+            console.print("[yellow]Warning: --report-to specified but no API Key found. Report might fail.[/yellow]")
+        
+        # Send it in the background so as not to slow down the work
+        try:
+            send_report(report_to, api_key, results, config)
+            if not is_machine_output:
+                console.print(f"[dim]Report sent to {report_to}[/dim]")
+        except Exception as e:
+            if verbose:
+                console.print(f"[red]Failed to send report: {e}[/red]")'''
 
 
 def _print_table(results: List[ScanResult]):
