@@ -28,7 +28,7 @@ from veritensor.engines.static.keras_engine import scan_keras_file
 from veritensor.engines.static.rules import is_license_restricted, is_match
 from veritensor.integrations.cosign import sign_container, is_cosign_available, generate_key_pair
 from veritensor.integrations.huggingface import HuggingFaceClient
-from veritensor.engines.content.injection import scan_text_file, TEXT_EXTENSIONS, DOC_EXTENSIONS
+from veritensor.engines.content.injection import scan_document, TEXT_EXTENSIONS, DOC_EXTENSIONS
 from veritensor.engines.static.notebook_engine import scan_notebook
 
 # --- Reporting Modules ---
