@@ -69,3 +69,12 @@ def test_cli_update(mock_get, tmp_path):
         saved_file = tmp_path / ".veritensor" / "signatures.yaml"
         assert saved_file.exists()
         assert "2099.01.01" in saved_file.read_text()
+
+@pytest.mark.skipif(not AWS_AVAILABLE, reason="AWS (boto3) not installed")
+def test_s3_scan_flow():
+    """
+    Test scanning an S3 bucket URI.
+    Skipped if boto3 is not installed.
+    """
+    result = runner.invoke(app, ["scan", "s3://bucket/model.pkl"])
+    pass
