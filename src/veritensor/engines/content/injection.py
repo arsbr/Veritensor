@@ -46,6 +46,8 @@ try:
 except ImportError:
     DOCX_AVAILABLE = False
 
+CHUNK_SIZE = 1024 * 1024 # 1MB chunks
+OVERLAP_SIZE = 4096      # 4KB overlap (enough for "Ignore previous instructions")
 
 def scan_document(file_path: Path) -> List[str]:
     """
@@ -53,59 +55,63 @@ def scan_document(file_path: Path) -> List[str]:
     Dispatches to specific extractors based on extension.
     """
     ext = file_path.suffix.lower()
-    content = ""
     threats = []
+    signatures = SignatureLoader.get_prompt_injections()
 
     try:
-        # 1. Extraction Strategy
-        if ext in TEXT_EXTENSIONS:
-            content = _read_text(file_path)
-        elif ext == ".pdf":
-            if not PDF_AVAILABLE:
-                return ["WARNING: pypdf not installed. Skipping PDF scan."]
-            content = _read_pdf(file_path)
-        elif ext == ".docx":
-            if not DOCX_AVAILABLE:
-                return ["WARNING: python-docx not installed. Skipping DOCX scan."]
-            content = _read_docx(file_path)
+        # 1. Get Text Generator (Yields chunks)
+        text_generator = None
+        
+        if ext in TEXT_EXTS:
+            text_generator = _read_text_sliding(file_path)
+        elif ext == ".pdf" and PDF_AVAILABLE:
+            # PDF/Docx usually fit in memory, so we treat them as one big chunk
+            # But we can still use the chunk logic if we wanted.
+            # For now, let's keep simple extraction for binary formats.
+            full_text = _read_pdf(file_path)
+            text_generator = _yield_string_chunks(full_text)
+        elif ext == ".docx" and DOCX_AVAILABLE:
+            full_text = _read_docx(file_path)
+            text_generator = _yield_string_chunks(full_text)
         else:
-            return [] # Unsupported format
-
-        # 2. Analysis (Common for all text)
-        if not content:
             return []
 
-        signatures = SignatureLoader.get_prompt_injections()
-        
-        # Optimization: we check with chunks if the text is huge, 
-        # but for PDF/Docx, the text usually fits into memory.
-        # We use line-by-line/block-by-block verification for accuracy.
-        
-        # Split into lines for accurate search (and so as not to hang Regex on a 10MB line)
-        lines = content.splitlines()
-        for i, line in enumerate(lines):
-            # Limit line length to prevent ReDoS
-            if len(line) > 4096: 
-                line = line[:4096]
-            
-            if is_match(line, signatures):
+        # 2. Scan Chunks
+        for chunk_index, chunk in enumerate(text_generator):
+            if is_match(chunk, signatures):
                 for pattern in signatures:
-                    if is_match(line, [pattern]):
-                        threats.append(f"HIGH: Prompt Injection detected in {file_path.name} (approx line {i+1}): '{pattern}'")
-                        return threats # Fail fast strategy
+                    if is_match(chunk, [pattern]):
+                        threats.append(f"HIGH: Prompt Injection detected in {file_path.name}: '{pattern}'")
+                        return threats # Fail fast
 
     except Exception as e:
         logger.warning(f"Failed to scan document {file_path}: {e}")
-        threats.append(f"WARNING: Document Scan Error: {str(e)}")
+        threats.append(f"WARNING: Doc Scan Error: {str(e)}")
         
     return threats
 
-
-def _read_text(path: Path) -> str:
-    """Reads standard text files with size limit."""
-    # Limit 5MB to prevent DoS
+def _read_text_sliding(path: Path) -> Generator[str, None, None]:
+    """
+    Reads a file with a sliding window to detect patterns crossing chunk boundaries.
+    """
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
-        return f.read(5 * 1024 * 1024)
+        buffer = ""
+        while True:
+            chunk = f.read(CHUNK_SIZE)
+            if not chunk:
+                break
+            
+            # Combine overlap from previous chunk + new chunk
+            data = buffer + chunk
+            yield data
+            
+            # Save the end of this chunk as the start of the next
+            buffer = chunk[-OVERLAP_SIZE:]
+
+def _yield_string_chunks(text: str) -> Generator[str, None, None]:
+    """Helper for PDF/Docx which are already in memory."""
+    if not text: return
+    yield text
 
 def _read_pdf(path: Path) -> str:
     """Extracts text from PDF (Text Layer Only)."""
