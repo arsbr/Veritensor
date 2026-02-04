@@ -28,7 +28,7 @@ from veritensor.engines.static.keras_engine import scan_keras_file
 from veritensor.engines.static.rules import is_license_restricted, is_match
 from veritensor.integrations.cosign import sign_container, is_cosign_available, generate_key_pair
 from veritensor.integrations.huggingface import HuggingFaceClient
-from veritensor.engines.content.injection import scan_text_file, TEXT_EXTENSIONS
+from veritensor.engines.content.injection import scan_text_file, TEXT_EXTENSIONS, DOC_EXTENSIONS
 from veritensor.engines.static.notebook_engine import scan_notebook
 
 # --- Reporting Modules ---
@@ -46,6 +46,8 @@ KERAS_EXTS = {".h5", ".keras"}
 SAFETENSORS_EXTS = {".safetensors"}
 GGUF_EXTS = {".gguf"}
 NOTEBOOK_EXTS = {".ipynb"}
+ALL_DOC_EXTENSIONS = TEXT_EXTENSIONS.union(DOC_EXTENSIONS)
+
 
 SEVERITY_LEVELS = {
     "LOW": 1,
@@ -211,15 +213,15 @@ def scan(
                     for t in threats: scan_res.add_threat(t)
             
             # 3. RAG / Text Files (New)
-            elif ext in TEXT_EXTENSIONS or filename_lower == "dockerfile":
+            elif ext in ALL_DOC_EXTENSIONS or filename_lower == "dockerfile":
                 if file_path_str.startswith("s3://"):
-                     scan_res.add_threat("WARNING: S3 scanning not supported for Text files yet.")
+                     scan_res.add_threat("WARNING: S3 scanning not supported for Documents yet.")
                 else:
                     try:
-                        threats = scan_text_file(file_path)
+                        threats = scan_document(file_path)
                         for t in threats: scan_res.add_threat(t)
                     except Exception as e:
-                        scan_res.add_threat(f"WARNING: RAG Scan Error: {str(e)}")
+                        scan_res.add_threat(f"WARNING: Doc Scan Error: {str(e)}")
             # 4. Jupyter Notebooks
             elif ext in NOTEBOOK_EXTS:
                 if file_path_str.startswith("s3://"):
