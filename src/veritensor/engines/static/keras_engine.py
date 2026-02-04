@@ -10,6 +10,7 @@ import zipfile
 import logging
 from pathlib import Path
 from typing import List, Dict, Any
+from veritensor.core.safe_zip import SafeZipReader, ZipBombError
 
 logger = logging.getLogger(__name__)
 
@@ -54,14 +55,19 @@ def _scan_keras_zip(file_path: Path) -> List[str]:
     threats = []
     try:
         with zipfile.ZipFile(file_path, "r") as z:
+            # ZIP BOMB PROTECTION
+            SafeZipReader.validate(z)
+            
             if "config.json" in z.namelist():
-                # VULNERABILITY FIX: Use _safe_read_json instead of direct json.load
                 with z.open("config.json") as f:
                     config_data = _safe_read_json(f)
                     threats.extend(_analyze_model_config(config_data))
+    except ZipBombError as e:
+        threats.append(f"CRITICAL: DoS Attack Detected (Zip Bomb): {str(e)}")
     except Exception as e:
         logger.error(f"Error scanning Keras zip {file_path}: {e}")
     return threats
+
 
 def _scan_keras_h5(file_path: Path) -> List[str]:
     threats = []
