@@ -44,6 +44,12 @@ test = [
     "fickling>=0.0.1" 
 ]
 
+# Optional dependencies for RAG document scanning (PDF, DOCX)
+rag = [
+    "pypdf>=4.0.0",
+    "python-docx>=1.1.0"
+]
+
 [project.urls]
 "Homepage" = "https://github.com/ArseniiBrazhnyk/Veritensor"
 "Bug Tracker" = "https://github.com/ArseniiBrazhnyk/Veritensor/issues"
