@@ -4,8 +4,9 @@
 import logging
 import json
 import csv
+import sys
 from pathlib import Path
-from typing import List, Generator, Optional
+from typing import List, Generator, Optional, Any
 
 from veritensor.engines.static.rules import SignatureLoader, is_match
 
@@ -22,6 +23,7 @@ except ImportError:
 # Config
 MAX_ROWS_DEFAULT = 10_000  # Quick scan limit (Sampling)
 CHUNK_SIZE = 1000          # Rows per batch
+MAX_JSON_LINE_SIZE = 10 * 1024 * 1024 # 10MB limit for JSONL lines (DoS protection)
 
 def scan_dataset(file_path: Path, full_scan: bool = False) -> List[str]:
     """
@@ -62,24 +64,24 @@ def scan_dataset(file_path: Path, full_scan: bool = False) -> List[str]:
             if not text_chunk or len(text_chunk) < 5:
                 continue
                 
-            # Limit string length to prevent Regex DoS
+            # Limit string length to prevent Regex DoS (ReDoS)
+            # We truncate strictly to 4KB per cell analysis
             if len(text_chunk) > 4096:
                 text_chunk = text_chunk[:4096]
 
             # A. Prompt Injection (Data Poisoning)
-            if is_match(text_chunk, injections):
-                for pat in injections:
-                    if is_match(text_chunk, [pat]):
-                        threats.append(f"HIGH: Data Poisoning (Injection) detected in {file_path.name}: '{pat}'")
-                        return threats # Fail fast
+            # OPTIMIZATION: Single pass loop instead of double check
+            for pat in injections:
+                if is_match(text_chunk, [pat]):
+                    threats.append(f"HIGH: Data Poisoning (Injection) detected in {file_path.name}: '{pat}'")
+                    return threats # Fail fast
 
             # B. Malicious URLs / Secrets / PII
-            if is_match(text_chunk, suspicious):
-                for pat in suspicious:
-                    if is_match(text_chunk, [pat]):
-                        # Определяем тип угрозы по паттерну
-                        label = "Malicious URL" if "http" in pat else "Secret/PII"
-                        threats.append(f"MEDIUM: {label} detected in dataset {file_path.name}: '{pat}'")
+            for pat in suspicious:
+                if is_match(text_chunk, [pat]):
+                    # Determine label
+                    label = "Malicious URL" if "http" in pat else "Secret/PII"
+                    threats.append(f"MEDIUM: {label} detected in dataset {file_path.name}: '{pat}'")
             
             row_count += 1
             if row_limit and row_count >= row_limit:
@@ -93,8 +95,11 @@ def scan_dataset(file_path: Path, full_scan: bool = False) -> List[str]:
 
 def _stream_parquet(path: Path, limit: Optional[int]) -> Generator[str, None, None]:
     """Reads Parquet file batch by batch, yielding ONLY string columns."""
-    parquet_file = pq.ParquetFile(path)
-    
+    try:
+        parquet_file = pq.ParquetFile(path)
+    except Exception:
+        return # Invalid parquet
+
     # Identify string columns to avoid scanning integers/floats (Optimization)
     str_columns = []
     for i, field in enumerate(parquet_file.schema_arrow):
@@ -119,6 +124,9 @@ def _stream_parquet(path: Path, limit: Optional[int]) -> Generator[str, None, No
 
 def _stream_csv(path: Path, limit: Optional[int]) -> Generator[str, None, None]:
     """Reads CSV using stdlib (Memory Safe)."""
+    # Increase field limit for large CSV cells, but keep it sane
+    csv.field_size_limit(min(sys.maxsize, 10 * 1024 * 1024)) 
+    
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
         reader = csv.reader(f)
         count = 0
@@ -130,10 +138,14 @@ def _stream_csv(path: Path, limit: Optional[int]) -> Generator[str, None, None]:
                 break
 
 def _stream_jsonl(path: Path, limit: Optional[int]) -> Generator[str, None, None]:
-    """Reads JSONL line by line."""
+    """Reads JSONL line by line with Memory Protection."""
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
         count = 0
         for line in f:
+            # OOM PROTECTION: Skip huge lines before parsing
+            if len(line) > MAX_JSON_LINE_SIZE:
+                continue
+
             try:
                 data = json.loads(line)
                 yield from _extract_strings_from_json(data)
@@ -144,12 +156,20 @@ def _stream_jsonl(path: Path, limit: Optional[int]) -> Generator[str, None, None
             if limit and count >= limit:
                 break
 
-def _extract_strings_from_json(data) -> Generator[str, None, None]:
-    if isinstance(data, str):
-        yield data
-    elif isinstance(data, dict):
-        for value in data.values():
-            yield from _extract_strings_from_json(value)
-    elif isinstance(data, list):
-        for item in data:
-            yield from _extract_strings_from_json(item)
+def _extract_strings_from_json(data: Any) -> Generator[str, None, None]:
+    """
+    Iterative (Stack-based) extraction to prevent RecursionError on deep JSON.
+    """
+    stack = [data]
+    
+    while stack:
+        current = stack.pop()
+        
+        if isinstance(current, str):
+            yield current
+        elif isinstance(current, dict):
+            # Push values to stack
+            stack.extend(current.values())
+        elif isinstance(current, list):
+            # Push items to stack
+            stack.extend(current)
