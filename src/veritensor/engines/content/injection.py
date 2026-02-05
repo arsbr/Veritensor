@@ -16,9 +16,8 @@ TEXT_EXTENSIONS = {
     ".tex", ".org", ".wiki",
     
     # Data & Configs
-    ".json", ".csv", ".xml", ".yaml", ".yml", ".toml", 
+    ".json", ".xml", ".yaml", ".yml", ".toml", 
     ".ini", ".cfg", ".conf", ".env", ".properties", ".editorconfig",
-    ".tsv", ".ndjson", ".jsonl", ".ldjson",
     
     # Source Code (Scripts)
     ".py", ".js", ".ts", ".java", ".c", ".cpp", ".h", ".hpp",
