@@ -124,6 +124,8 @@ def _stream_parquet(path: Path, limit: Optional[int]) -> Generator[str, None, No
 
 def _stream_csv(path: Path, limit: Optional[int]) -> Generator[str, None, None]:
     """Reads CSV using hybrid approach (Pandas if available, else stdlib)."""
+    ext = path.suffix.lower()
+    sep = "\t" if ext == ".tsv" else ","
     try:
         import pandas as pd
         header_df = pd.read_csv(path, nrows=0)
@@ -133,7 +135,8 @@ def _stream_csv(path: Path, limit: Optional[int]) -> Generator[str, None, None]:
             return
 
         chunks = pd.read_csv(
-            path, 
+            path,
+            sep=sep,
             chunksize=CHUNK_SIZE, 
             nrows=limit, 
             usecols=text_cols,
@@ -150,7 +153,7 @@ def _stream_csv(path: Path, limit: Optional[int]) -> Generator[str, None, None]:
     except ImportError:
         csv.field_size_limit(min(sys.maxsize, 10 * 1024 * 1024))
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            reader = csv.reader(f)
+            reader = csv.reader(f, delimiter=sep)
             count = 0
             try:
                 for row in reader:
