@@ -20,27 +20,31 @@ def test_cache_init(mock_cache_path):
     assert cursor.fetchone() is not None
     cache.close()
 
-def test_cache_set_get(mock_cache_path, tmp_path):
-    # 1. Setup file
+def test_cache_set_get(tmp_path, mocker):
+    db_path = tmp_path / "unit_test_cache.db"
+    mocker.patch("veritensor.core.cache.CACHE_FILE", db_path)
+
+    #  Setup file
     f = tmp_path / "model.pt"
-    f.write_text("data")
+    f.write_text("original data")
     
     cache = HashCache()
     
-    # 2. Set hash
-    cache.set(f, "hash_123")
-    
-    # 3. Get hash (Should hit)
-    retrieved = cache.get(f)
-    assert retrieved == "hash_123"
-    
-    # 4. Modify file (mtime changes)
-    import time
-    time.sleep(0.01) # ensure mtime diff
-    f.write_text("new data")
-    
-    # 5. Get hash (Should miss because mtime changed)
-    retrieved_after_edit = cache.get(f)
-    assert retrieved_after_edit is None
-    
-    cache.close()
+    try:
+        # Set hash
+        cache.set(f, "hash_123")
+        
+        # Get hash (Should hit)
+        retrieved = cache.get(f)
+        assert retrieved == "hash_123"
+        
+        # Modify file (mtime changes)
+        time.sleep(0.1) 
+        f.write_text("new data")
+        
+        # Get hash (Should miss because mtime changed)
+        retrieved_after_edit = cache.get(f)
+        assert retrieved_after_edit is None
+
+    finally:
+        cache.close()
