@@ -35,6 +35,14 @@ dependencies = [
     # Fickling removed from here to avoid installing PyTorch (800MB+) for regular users
 ]
 
+DEP_FILES = {
+    "requirements.txt", 
+    "pyproject.toml", 
+    "Pipfile", 
+    "Pipfile.lock", 
+    "poetry.lock"
+}
+
 [project.optional-dependencies]
 # Install these only for testing: pip install veritensor[test]
 test = [
