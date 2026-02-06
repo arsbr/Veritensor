@@ -92,22 +92,29 @@ def scan_dependencies(file_path: Path) -> List[str]:
 
 def _normalize_name(name: str) -> str:
     """Normalizes package names to lowercase and replaces underscores with hyphens."""
-    return name.lower().replace("_", "-")
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 def _is_typo(s1: str, s2: str) -> bool:
     """
     Calculates if s1 is a typo of s2 (Levenshtein Distance = 1).
     Handles substitutions, insertions, and deletions.
     """
+    s1 = _normalize_name(s1)
+    s2 = _normalize_name(s2)
+
+    # 2. If they are identical after normalization, it's NOT a typo (Distance 0)
+    if s1 == s2:
+        return False
+
     n, m = len(s1), len(s2)
     if abs(n - m) > 1:
         return False
 
     if n == m:
-        # Substitution case
+        # Substitution case (e.g., torch -> turch)
         return sum(1 for a, b in zip(s1, s2) if a != b) == 1
 
-    # Insertion/Deletion case: ensure s1 is the shorter string
+    # Insertion/Deletion case: ensure s1 is shorter
     if n > m:
         s1, s2 = s2, s1
         n, m = m, n
@@ -116,7 +123,7 @@ def _is_typo(s1: str, s2: str) -> bool:
     while i < n and j < m:
         if s1[i] != s2[j]:
             diffs += 1
-            j += 1 # Move pointer in longer string
+            j += 1 # Skip char in longer string
             if diffs > 1:
                 return False
         else:
