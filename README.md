@@ -41,6 +41,7 @@ Veritensor is modular. Install only what you need to keep your environment light
 | **Core** | `pip install veritensor` | Base model scanning (Pickle, Keras, Safetensors) |
 | **Data** | `pip install veritensor[data]` | Datasets (Parquet, TSV, Pandas support) |
 | **RAG** | `pip install veritensor[rag]` | Documents (PDF, DOCX, PPTX) |
+| **PII** | `pip install veritensor[pii]` | PII detection |
 | **AWS** | `pip install veritensor[aws]` | Direct scanning from S3 buckets |
 | **All** | `pip install veritensor[all]` | Full suite for enterprise security |
 
