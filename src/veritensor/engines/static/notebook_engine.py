@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from typing import List, Any
 from veritensor.engines.static.rules import get_severity, SignatureLoader, is_match
+from veritensor.engines.content.pii import PIIScanner  # <--- NEW IMPORT
 
 logger = logging.getLogger(__name__)
 
@@ -55,12 +56,11 @@ def scan_notebook(file_path: Path) -> List[str]:
                             threats.append(f"HIGH: Jupyter Magic detected in cell {cell_num}: '{stripped[:30]}...'")
 
                 # 2. AST (Python Code Analysis)
-                # Cleaning magics while preserving line numbers
                 clean_source = _clean_magics(source_text)
                 if clean_source.strip():
                     threats.extend(_scan_ast(clean_source, cell_num))
                 
-                # 3. Output Secrets (Leaked Keys)
+                # 3. Output Secrets (Leaked Keys) & PII
                 for output in outputs_list:
                     output_type = output.get("output_type")
                     text_content = ""
@@ -73,11 +73,18 @@ def scan_notebook(file_path: Path) -> List[str]:
                     if text_content:
                         # Optimization: Scan only the beginning of large outputs
                         scan_content = text_content[:MAX_OUTPUT_SCAN_SIZE]
+                        
+                        # A. Secrets (Regex)
                         if is_match(scan_content, secret_patterns):
-                            # Double check to report exactly which pattern matched
                             for pat in secret_patterns:
                                 if is_match(scan_content, [pat]):
                                     threats.append(f"CRITICAL: Leaked secret detected in Cell {cell_num} Output: '{pat}'")
+                        
+                        # B. PII (Presidio ML) <--- NEW BLOCK
+                        pii_threats = PIIScanner.scan(scan_content)
+                        if pii_threats:
+                            # Add context about location
+                            threats.extend([f"{t} in Cell {cell_num} Output" for t in pii_threats])
 
             # --- B. Markdown Cells (RAG Security) ---
             elif cell_type == "markdown":
