@@ -46,11 +46,18 @@ test = [
     "coverage>=7.0.0"      
 ]
 
+# Optional dependencies for PII scanning 
+pii = [
+    "presidio-analyzer>=2.2.0",
+    "spacy>=3.0.0"
+]
+
 # Optional dependencies for RAG document scanning (PDF, DOCX)
 rag = [
     "pypdf>=4.0.0",
     "python-docx>=1.1.0",
-    "python-pptx>=0.6.21"
+    "python-pptx>=0.6.21",
+    "veritensor[pii]"
 ]
 
 # AWS Support (S3 scanning)
@@ -64,7 +71,7 @@ data = [
 ]
 
 all = [
-    "veritensor[aws,data,rag]"
+    "veritensor[aws,data,rag,pii]"
 ]
 
 dev = [
