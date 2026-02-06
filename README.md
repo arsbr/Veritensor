@@ -162,20 +162,20 @@ cosign verify --key veritensor.pub my-org/my-app:v1.0.0
 Add this to your .github/workflows/security.yml to block malicious models in Pull Requests:
 ```yaml
 name: AI Security Scan
+
 on: [pull_request]
 
 jobs:
   veritensor-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4 # Recommended to use latest checkout
       
-      - name: Scan Models
+      - name: Veritensor AI Security Platform
         uses: ArseniiBrazhnyk/Veritensor@v1.4.0
         with:
-          path: './models'
-          repo: 'meta-llama/Llama-2-7b' # Optional: Verify integrity
-          force: 'false' # Set to true to not fail build on threats
+          path: '.'         # Scans everything: Models, Notebooks, Datasets, and Lock-files
+          force: 'false'
 ```
 ### Pre-commit Hook
 
