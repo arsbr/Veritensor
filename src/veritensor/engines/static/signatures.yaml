@@ -151,8 +151,9 @@ suspicious_strings:
   - "winscp.ini"   
   - ".aws/credentials"
   - ".aws/config"
-  - ".pypirc"          # PyPI credentials
+  - ".pypirc"       
   - ".git-credentials"
+  
   # CSS Hiding Techniques
   - "regex:font-size:\\s*0px"
   - "regex:font-size:\\s*1px"
@@ -214,6 +215,29 @@ suspicious_strings:
   - "regex:https?://\\S+\\.bat"
   - "regex:https?://\\S+\\.ps1"
   - "regex:https?://\\S+\\.jar"
+
+ # Ransomware indicators in code
+  - "regex:(?i)\\.encrypt\\("
+  - "regex:(?i)walk\\(.*\\.os\\.path" # Обход файловой системы (часто в вирусах)
+  
+  # Crypto Mining
+  - "regex:(?i)xmrig"
+  - "regex:(?i)ethminer"
+  - "regex:(?i)stratum\\+tcp"
+  - "regex:(?i)stratum\\+ssl"
+  - "regex:(?i)cpuminer"   
+  - "regex:(?i)minerd"        
+  - "regex:(?i)nanominer"
+  - "regex:(?i)(nicehash|nanopool|ethermine|dwarfpool|monerohash|supportxmr)\\.com"
+  - "regex:(?i)(f2pool|antpool|poolin)\\.com"
+
+  # Crypto
+  # Bitcoin (Legacy, P2SH, and Bech32)
+  - "regex:\\b([13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[ac-hj-np-z02-9]{11,71})\\b"
+# Ethereum (standard hex address)
+  - "regex:\\b0x[a-fA-F0-9]{40}\\b"
+# Monero (XMR)
+  - "regex:\\b4[0-9AB][1-9A-HJ-NP-Za-km-z]{93}\\b"
 
 # --- 3. RAG / Prompt Injections ---
 # Sources: JailbreakChat, OWASP LLM Top 10, Giskard
