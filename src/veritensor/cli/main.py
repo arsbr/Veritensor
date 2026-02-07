@@ -414,11 +414,7 @@ def _print_table(results: List[ScanResult]):
         else:
             # Remove duplicates while preserving order
             unique_threats = list(dict.fromkeys(res.threats))
-            summary = unique_threats[:2]
-            
-            if len(unique_threats) > 2:
-                summary.append(f"[bold yellow]+{len(unique_threats)-2} more issues...[/bold yellow]")
-            
+    
             display_threats = "\n".join(summary)
 
         table.add_row(
