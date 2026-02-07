@@ -1,4 +1,4 @@
-version: "2026.02.05"
+version: "2026.02.07"
 description: "Comprehensive security signatures (RCE, Cloud Theft, Exfiltration, MLOps abuse)"
 
 # --- 1. Unsafe Modules & Functions (Import Blocklist) ---
