@@ -26,9 +26,14 @@ MAX_ROWS_DEFAULT = 10_000  # Quick scan limit (Sampling)
 CHUNK_SIZE = 1000          # Rows per batch
 MAX_JSON_LINE_SIZE = 10 * 1024 * 1024 # 10MB limit for JSONL lines (DoS protection)
 
+# FALLBACK PATTERNS 
 FALLBACK_SUSPICIOUS = [
-    "http://", "https://", "malicious", "eval(", 
-    "AKIA", "AIza", "password", "secret"
+    "regex:https?://[\\w\\.-]+", # Basic URL
+    "regex:(?i)malicious",
+    "regex:(?i)eval\\(", 
+    "regex:AKIA[0-9A-Z]{16}",     # AWS Key
+    "regex:(?i)password",
+    "regex:(?i)secret"
 ]
 
 def scan_dataset(file_path: Path, full_scan: bool = False) -> List[str]:
@@ -39,7 +44,7 @@ def scan_dataset(file_path: Path, full_scan: bool = False) -> List[str]:
     ext = file_path.suffix.lower()
     threats = []
     
-    # 1. Load Signatures (с Safety Net)
+    # 1. Load Signatures
     injections = SignatureLoader.get_prompt_injections()
     
     try:
@@ -48,7 +53,7 @@ def scan_dataset(file_path: Path, full_scan: bool = False) -> List[str]:
         suspicious = []
     
     if not suspicious: 
-        suspicious = FALLBACK_SUSPICIOUS 
+        suspicious = FALLBACK_SUSPICIOUS
 
     # 2. Setup Limit
     row_limit = None if full_scan else MAX_ROWS_DEFAULT
@@ -60,13 +65,13 @@ def scan_dataset(file_path: Path, full_scan: bool = False) -> List[str]:
         if ext == ".parquet":
             if not PYARROW_AVAILABLE:
                 return ["WARNING: pyarrow not installed. Run 'pip install veritensor[data]'"]
-            text_stream = _stream_parquet(file_path, row_limit)
+            text_stream = _stream_parquet(file_path)
             
         elif ext in {".csv", ".tsv"}:
-            text_stream = _stream_csv(file_path, row_limit)
+            text_stream = _stream_csv(file_path)
             
         elif ext in {".jsonl", ".ndjson", ".ldjson"}:
-            text_stream = _stream_jsonl(file_path, row_limit)
+            text_stream = _stream_jsonl(file_path)
             
         else:
             return [] # Not a dataset
@@ -89,16 +94,16 @@ def scan_dataset(file_path: Path, full_scan: bool = False) -> List[str]:
 
             # B. Malicious URLs / Secrets (Regex)
             for pat in suspicious:
-                if pat in scan_text:
-                    label = "Malicious URL" if "http" in pat else "Secret/PII"
+                if is_match(scan_text, [pat]):
+                    label = "Malicious URL" if "http" in pat or "://" in pat else "Secret/PII"
                     threats.append(f"MEDIUM: {label} detected in dataset {file_path.name}: '{pat}'")
             
-            # C. Collect PII Sample
+            # C. Collect PII Sample 
             if len(pii_buffer) < 50:
                 pii_buffer.append(scan_text)
 
             row_count += 1
-            # Double check limit (in case generator didn't handle it)
+            # Check limit here (Centralized control)
             if row_limit and row_count >= row_limit:
                 break
         
@@ -114,9 +119,9 @@ def scan_dataset(file_path: Path, full_scan: bool = False) -> List[str]:
 
     return threats
 
-# --- GENERATORS ---
+# --- GENERATORS (Infinite streams, limit handled by caller) ---
 
-def _stream_parquet(path: Path, limit: Optional[int]) -> Generator[str, None, None]:
+def _stream_parquet(path: Path) -> Generator[str, None, None]:
     try:
         parquet_file = pq.ParquetFile(path)
     except Exception:
@@ -130,61 +135,49 @@ def _stream_parquet(path: Path, limit: Optional[int]) -> Generator[str, None, No
     if not str_columns:
         return
 
-    count = 0
     for batch in parquet_file.iter_batches(batch_size=CHUNK_SIZE, columns=str_columns):
         df = batch.to_pandas()
-        
         for _, row in df.iterrows():
+            # Convert row to single string
             text_values = " ".join(row.dropna().astype(str).tolist())
             yield text_values
-            
-            count += 1
-            if limit and count >= limit:
-                return
 
-def _stream_csv(path: Path, limit: Optional[int]) -> Generator[str, None, None]:
+def _stream_csv(path: Path) -> Generator[str, None, None]:
     ext = path.suffix.lower()
     sep = "\t" if ext == ".tsv" else ","
-    count = 0
     
     try:
         import pandas as pd
+        # Read in chunks without limit (limit handled by caller)
         chunks = pd.read_csv(
             path, sep=sep, chunksize=CHUNK_SIZE, 
-            nrows=limit, 
             encoding="utf-8", on_bad_lines="skip", low_memory=True
         )
         
         for chunk in chunks:
+            # Select object (string) columns only
             text_df = chunk.select_dtypes(include=['object'])
             for _, row in text_df.iterrows():
                 text_val = " ".join(row.dropna().astype(str).tolist())
                 yield text_val
-                
-                count += 1
-                if limit and count >= limit:
-                    return
 
     except ImportError:
-        csv.field_size_limit(min(sys.maxsize, 2147483647)) # Fix OverflowError on Windows
+        # Fallback to stdlib
+        csv.field_size_limit(min(sys.maxsize, 2147483647))
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
             reader = csv.reader(f, delimiter=sep)
             for row in reader:
                 yield " ".join(row)
-                count += 1
-                if limit and count >= limit:
-                    break
                 
-def _stream_jsonl(path: Path, limit: Optional[int]) -> Generator[str, None, None]:
+def _stream_jsonl(path: Path) -> Generator[str, None, None]:
     """Reads JSONL safely."""
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
-        count = 0
         while True:
             line = f.readline()
             if not line:
                 break
                 
-            # OOM Protection: Skip massive lines
+            # OOM Protection: Skip huge lines, do NOT yield, do NOT increment caller's count
             if len(line) > MAX_JSON_LINE_SIZE:
                 continue
 
@@ -195,13 +188,8 @@ def _stream_jsonl(path: Path, limit: Optional[int]) -> Generator[str, None, None
                     yield " ".join(strings)
             except json.JSONDecodeError:
                 pass 
-            
-            count += 1
-            if limit and count >= limit:
-                break
 
 def _extract_strings_from_json(data: Any) -> Generator[str, None, None]:
-    """Iterative extraction."""
     stack = [data]
     while stack:
         current = stack.pop()
