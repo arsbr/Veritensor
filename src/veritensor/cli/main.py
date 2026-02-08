@@ -40,7 +40,7 @@ from veritensor.integrations.huggingface import HuggingFaceClient
 from veritensor.engines.content.injection import scan_document, TEXT_EXTENSIONS, DOC_EXTS
 from veritensor.engines.static.notebook_engine import scan_notebook
 from veritensor.engines.data.dataset_engine import scan_dataset
-from veritensor.engines.static.dependency_engine import scan_dependencies # <--- NEW IMPORT
+from veritensor.engines.static.dependency_engine import scan_dependencies
 from veritensor.reporting.telemetry import send_report
 
 # --- Reporting Modules ---
@@ -57,7 +57,7 @@ PICKLE_EXTS = {".pt", ".pth", ".bin", ".pkl", ".ckpt", ".whl"}
 KERAS_EXTS = {".h5", ".keras"}
 NOTEBOOK_EXTS = {".ipynb"}
 DATASET_EXTS = {".parquet", ".csv", ".jsonl"}
-DEP_FILES = {"requirements.txt", "pyproject.toml", "Pipfile", "poetry.lock", "Pipfile.lock"} 
+DEP_FILES = {"requirements.txt", "pyproject.toml", "Pipfile", "poetry.lock", "Pipfile.lock"}
 ALL_DOC_EXTS = TEXT_EXTENSIONS.union(DOC_EXTS)
 
 SEVERITY_LEVELS = {
@@ -66,6 +66,25 @@ SEVERITY_LEVELS = {
     "HIGH": 3,
     "CRITICAL": 4
 }
+
+# --- SMART FILTER CONFIG ---
+# Threats considered "Noise" in Data Science context.
+# These will NOT block deployment and will NOT be shown without --verbose.
+NOISE_PATTERNS = [
+    "Jupyter Magic",       # !pip install...
+    "Unsafe import",       # import os...
+    "Dangerous call",      # os.system... (unless proven malware)
+    "Metadata parse error",
+    "Suspicious script/XSS", # False positives in Markdown
+    "Suspicious link"
+]
+
+def is_noise(threat_msg: str) -> bool:
+    """Returns True if the threat is likely a false positive/noise."""
+    for pattern in NOISE_PATTERNS:
+        if pattern in threat_msg:
+            return True
+    return False
 
 def check_severity(threats: List[str], threshold: str) -> bool:
     threshold_val = SEVERITY_LEVELS.get(threshold.upper(), 4)
@@ -78,7 +97,7 @@ def check_severity(threats: List[str], threshold: str) -> bool:
                 return True
     return False
 
-# --- WORKER FUNCTION (Must be at module level for multiprocessing) ---
+# --- WORKER FUNCTION ---
 def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bool]) -> ScanResult:
     """
     Independent worker function that scans a single file.
@@ -86,7 +105,6 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
     """
     file_path_str, config, repo, ignore_license, full_scan_dataset, is_s3 = args
     
-    # Robust Path Handling for S3 vs Local
     if is_s3:
         file_name = file_path_str.split("/")[-1]
         ext = os.path.splitext(file_name)[1].lower()
@@ -126,13 +144,11 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
 
     # --- B. Static Analysis ---
     try:
-        # 1. Pickle / PyTorch
         if ext in PICKLE_EXTS:
             with get_stream_for_path(file_path_str) as f:
                 threats = scan_pickle_stream(f, strict_mode=True)
                 for t in threats: scan_res.add_threat(t)
         
-        # 2. Keras
         elif ext in KERAS_EXTS:
             if is_s3:
                 scan_res.add_threat("WARNING: S3 scanning not supported for Keras yet.")
@@ -141,7 +157,6 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
                     threats = scan_keras_file(file_path)
                     for t in threats: scan_res.add_threat(t)
         
-        # 3. Documents (RAG)
         elif ext in ALL_DOC_EXTS or filename_lower == "dockerfile":
             if is_s3:
                  scan_res.add_threat("WARNING: S3 scanning not supported for Documents yet.")
@@ -150,7 +165,6 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
                     threats = scan_document(file_path)
                     for t in threats: scan_res.add_threat(t)
 
-        # 4. Notebooks
         elif ext in NOTEBOOK_EXTS:
             if is_s3:
                  scan_res.add_threat("WARNING: S3 scanning not supported for Notebooks yet.")
@@ -159,7 +173,6 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
                     threats = scan_notebook(file_path)
                     for t in threats: scan_res.add_threat(t)
 
-        # 5. Datasets
         elif ext in DATASET_EXTS:
             if is_s3:
                  scan_res.add_threat("WARNING: S3 scanning not supported for Datasets yet.")
@@ -168,7 +181,6 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
                     threats = scan_dataset(file_path, full_scan=full_scan_dataset)
                     for t in threats: scan_res.add_threat(t)
         
-        # 6. Dependencies (Supply Chain) <--- NEW BLOCK
         elif file_name in DEP_FILES:
             if is_s3:
                  scan_res.add_threat("WARNING: S3 scanning not supported for Dependencies yet.")
@@ -180,7 +192,7 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
     except Exception as e:
         scan_res.add_threat(f"CRITICAL: Engine Error: {str(e)}")
 
-    # --- C. License Check (Local only) ---
+    # --- C. License Check ---
     if not is_s3 and file_path:
         reader = get_reader_for_file(file_path)
         license_str = None
@@ -241,7 +253,7 @@ def scan(
     is_machine_output = json_output or sarif_output or sbom_output
 
     if not is_machine_output:
-        console.print(Panel.fit(f"🛡️  [bold cyan]Veritensor Security Scanner[/bold cyan] v1.4.1", border_style="cyan"))
+        console.print(Panel.fit(f"🛡️  [bold cyan]Veritensor Security Scanner[/bold cyan] v1.5.0", border_style="cyan"))
 
     # 1. Collect Files
     files_to_scan = []
@@ -283,7 +295,7 @@ def scan(
     else:
         tasks.append((path, config, repo, ignore_license, full_scan, True))
 
-    # 3. Execution (Parallel) with ANTI-HANG protection
+    # 3. Execution (Parallel)
     if not is_machine_output:
         console.print(f"[dim]🚀 Starting scan with {jobs} workers on {len(tasks)} files...[/dim]")
 
@@ -328,38 +340,66 @@ def scan(
             executor.shutdown(wait=True)
         hash_cache.close()
 
-    # 4. Analysis & Reporting
+    # 4. Analysis & Reporting (SMART FILTERING)
     found_malware = False
     found_license_issue = False
     found_integrity_issue = False
 
+    filtered_results = []
+
     for res in results:
+        # Separate real threats from noise
+        real_threats = [t for t in res.threats if not is_noise(t)]
+        
+        # LOGIC FOR BLOCKING (Decision)
         if res.status == "FAIL":
-            if check_severity(res.threats, config.fail_on_severity):
-                for t in res.threats:
-                    if "License" in t or "Restricted license" in t:
-                        found_license_issue = True
-                    elif "Hash mismatch" in t:
-                        found_integrity_issue = True
-                    else:
-                        found_malware = True
+            # Only count towards blocking if there are REAL threats
+            if real_threats:
+                if check_severity(real_threats, config.fail_on_severity):
+                    for t in real_threats:
+                        if "License" in t or "Restricted license" in t:
+                            found_license_issue = True
+                        elif "Hash mismatch" in t:
+                            found_integrity_issue = True
+                        else:
+                            # Malware, Secrets, PII, Injections
+                            found_malware = True
+        
+        # LOGIC FOR DISPLAY (Filtering)
+        if res.status == "FAIL" and not real_threats:
+            # It's only noise (e.g. import os)
+            if verbose:
+                # Show as FAIL if verbose
+                filtered_results.append(res)
+            else:
+                # Show as PASS in table to reduce noise
+                # Create a visual copy to not mess up telemetry
+                clean_res = ScanResult(res.file_path, status="PASS")
+                # Optional: You can add a note about hidden noise
+                # clean_res.threats = ["(Noise hidden)"] 
+                filtered_results.append(clean_res)
+        else:
+            # Real threats or clean file
+            filtered_results.append(res)
 
     if sarif_output:
-        print(generate_sarif_report(results))
+        print(generate_sarif_report(results)) # SARIF gets everything
     elif sbom_output:
         print(generate_sbom(results))
     elif json_output:
         results_dicts = [r.__dict__ for r in results]
         print(json.dumps(results_dicts, indent=2))
     else:
-        _print_table(results)
+        # Console gets filtered results
+        _print_table(filtered_results)
 
     if report_to or config.report_url:
         if not is_machine_output:
             console.print(f"[dim]📡 Sending telemetry...[/dim]")
+        # Telemetry gets raw results (for audit)
         send_report(results, config, override_url=report_to, override_key=api_key)
 
-    # 5. Decision Logic
+    # 5. Decision Logic (Blocking based on found_malware calculated above)
     exit_code = 0
     sign_status = "clean"
     block_reasons = []
@@ -367,10 +407,10 @@ def scan(
     if found_malware or found_integrity_issue:
         if ignore_malware:
             if not is_machine_output:
-                console.print("\n[bold yellow]⚠️  MALWARE/INTEGRITY RISKS DETECTED (Ignored by user)[/bold yellow]")
+                console.print("\n[bold yellow]⚠️  SECURITY RISKS DETECTED (Ignored by user)[/bold yellow]")
             sign_status = "forced_approval"
         else:
-            block_reasons.append("Malware/Integrity")
+            block_reasons.append("Malware/Secrets/Integrity")
             exit_code = 1
 
     if found_license_issue:
@@ -409,17 +449,16 @@ def _print_table(results: List[ScanResult]):
     for res in results:
         status_style = "green" if res.status == "PASS" else "bold red"
         
-        # Threat Grouping Logic
         if not res.threats:
             display_threats = "[dim]None[/dim]"
         else:
             # Remove duplicates while preserving order
             unique_threats = list(dict.fromkeys(res.threats))
-            
+            # Join ALL threats with newlines (No truncation)
             display_threats = "\n".join(unique_threats)
 
         table.add_row(
-            res.file_path.split("/")[-1], # Show only filename for cleanliness
+            res.file_path.split("/")[-1], 
             f"[{status_style}]{res.status}[/{status_style}]",
             display_threats
         )
@@ -493,7 +532,7 @@ def update():
 
 @app.command()
 def version():
-    console.print("Veritensor v1.4.1 (Community Edition)")
+    console.print("Veritensor v1.5.0 (Community Edition)")
 
 
 @app.command()
