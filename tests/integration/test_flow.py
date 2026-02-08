@@ -1,5 +1,8 @@
 import pytest
 import textwrap
+import pickle
+import os
+from pathlib import Path
 from typer.testing import CliRunner
 from unittest.mock import patch, MagicMock
 from veritensor.cli.main import app
@@ -22,8 +25,12 @@ def create_malicious_pickle(path):
     Veritensor's engine is designed to detect this 'os.system' global.
     """
     # GLOBAL 'os' 'system' -> TUPLE -> REDUCE
-    # This is a classic RCE signature that should trigger a CRITICAL threat.
-    path.write_bytes(b"\x80\x04\x95\x15\x00\x00\x00\x00\x00\x00\x00\x8c\x02os\x94\x8c\x06system\x94\x93\x94.")
+    class Malicious:
+        def __reduce__(self):
+            return (os.system, ("echo hacked",))
+            
+    with open(path, "wb") as f:
+        pickle.dump(Malicious(), f)
 
 # --- Test Cases ---
 
@@ -69,7 +76,8 @@ def test_cli_ignore_malware(tmp_path):
     
     # The flag forces exit code 0 despite threats
     assert result.exit_code == 0
-    assert "MALWARE/INTEGRITY RISKS DETECTED (Ignored by user)" in result.stdout
+    # FIX: Updated expected string to match new main.py
+    assert "SECURITY RISKS DETECTED" in result.stdout
 
 def test_cli_ignore_license(tmp_path):
     """
