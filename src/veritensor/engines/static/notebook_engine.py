@@ -6,8 +6,10 @@ import ast
 import logging
 from pathlib import Path
 from typing import List, Any
+import re
+from veritensor.core.entropy import is_high_entropy
 from veritensor.engines.static.rules import get_severity, SignatureLoader, is_match
-from veritensor.engines.content.pii import PIIScanner  # <--- NEW IMPORT
+from veritensor.engines.content.pii import PIIScanner  
 
 logger = logging.getLogger(__name__)
 
@@ -77,10 +79,24 @@ def scan_notebook(file_path: Path) -> List[str]:
                         # A. Secrets (Regex)
                         if is_match(scan_content, secret_patterns):
                             for pat in secret_patterns:
-                                if is_match(scan_content, [pat]):
-                                    threats.append(f"CRITICAL: Leaked secret detected in Cell {cell_num} Output: '{pat}'")
-                        
-                        # B. PII (Presidio ML) <--- NEW BLOCK
+                                if pat.startswith("regex:") and "api" in pat.lower(): # Optimization: we use only Generic Regex
+                                    regex_str = pat.replace("regex:", "", 1).strip()
+                                    try:
+                                        # We are looking for all the matches in the text.
+                                        matches = re.findall(regex_str, source_text, re.IGNORECASE)
+                                        for match in matches:
+                                            # A match can be a tuple if there are groups in the regex.
+                                            # Our regex: (variable name, value)
+                                            if isinstance(match, tuple) and len(match) >= 2:
+                                                secret_candidate = match[1] 
+                                                
+                                                # 2. Checking Entropy
+                                                if is_high_entropy(secret_candidate):
+                                                    threats.append(f"CRITICAL: High Entropy Secret detected in Cell {cell_num}: '{match[0]} = ...'")
+                                    except Exception:
+                                        pass
+                                        
+                        # B. PII (Presidio ML) 
                         pii_threats = PIIScanner.scan(scan_content)
                         if pii_threats:
                             # Add context about location
