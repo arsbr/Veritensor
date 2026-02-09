@@ -350,3 +350,75 @@ prompt_injections:
   - "regex:(?i)new\\s+hiring\\s+criteria"
   - "regex:(?i)internal\\s+update"
   - "regex:(?i)hiring_note"
+
+  # =================================================================
+  # AI & ML SERVICES 
+  # =================================================================
+  # Anthropic (Claude)
+  - "regex:sk-ant-api03-[a-zA-Z0-9_\\-]{93}AA"
+  # Cohere
+  - "regex:(?i)[\w.-]{0,50}?(?:cohere|CO_API_KEY).*?([a-zA-Z0-9]{40})"
+  # OpenAI (Project & Service keys)
+  - "regex:sk-(?:proj|svcacct|admin)-[A-Za-z0-9_\\-]{40,}"
+  # Perplexity AI
+  - "regex:pplx-[a-zA-Z0-9]{48}"
+  # Hugging Face (Enhanced)
+  - "regex:(?:hf_|api_org_)[a-zA-Z0-9]{34}"
+  # Databricks (Big Data)
+  - "regex:dapi[a-f0-9]{32}"
+  # Pinecone / Weaviate / Vector DBs (Generic UUIDs often used here)
+  - "regex:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+
+  # =================================================================
+  # CLOUD INFRASTRUCTURE (Critical)
+  # =================================================================
+  # Alibaba Cloud
+  - "regex:LTAI[a-z0-9]{20}"
+  # DigitalOcean
+  - "regex:dop_v1_[a-f0-9]{64}"
+  # Heroku API
+  - "regex:HRKU-AA[0-9a-zA-Z_-]{58}"
+  # Google Cloud / Firebase (AIza...)
+  - "regex:AIza[0-9A-Za-z\\-_]{35}"
+  # Azure AD Client Secret
+  - "regex:[a-zA-Z0-9_~.]{3}\\dQ~[a-zA-Z0-9_~.-]{31,34}"
+  
+  # =================================================================
+  # DEVELOPER TOOLS & SECRETS
+  # =================================================================
+  # GitHub PAT & OAuth
+  - "regex:(?:ghp|gho|ghu|ghs|ghr)_[0-9a-zA-Z]{36}"
+  # GitLab PAT
+  - "regex:glpat-[0-9a-zA-Z_\\-]{20}"
+  # PyPI Upload Token (Python Packages)
+  - "regex:pypi-AgEIcHlwaS5vcmc[\\w-]{50,}"
+  # NPM Access Token
+  - "regex:npm_[a-z0-9]{36}"
+  # HashiCorp Vault
+  - "regex:hvs\\.[a-z0-9]{24}"
+  # Ngrok (Tunneling)
+  - "regex:1[a-zA-Z0-9]{21,}"
+
+  # =================================================================
+  # MESSAGING & BOTS (Common in RAG/Agents)
+  # =================================================================
+  # Slack Bot Token
+  - "regex:xoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*"
+  # Slack User Token
+  - "regex:xoxp-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9-]*"
+  # Slack Webhook (Critical for Phishing)
+  - "regex:https://hooks.slack.com/services/T[a-zA-Z0-9_]{8}/B[a-zA-Z0-9_]{8}/[a-zA-Z0-9_]{24}"
+  # Telegram Bot Token
+  - "regex:[0-9]{9,10}:[a-zA-Z0-9_-]{35}"
+  # Discord Bot Token
+  - "regex:[a-zA-Z0-9]{24}\\.[a-zA-Z0-9]{6}\\.[a-zA-Z0-9_-]{27}"
+  # Discord Webhook
+  - "regex:https://discord.com/api/webhooks/[0-9]{18,19}/[a-zA-Z0-9_-]+"
+
+  # =================================================================
+  # GENERIC / HIGH ENTROPY FALLBACKS
+  # =================================================================
+  # Generic Private Key Headers
+  - "regex:-----BEGIN [A-Z ]+ PRIVATE KEY"
+  # Generic API Key assignment (Python style)
+  - "regex:(?i)(api_key|secret|token)\\s*=\s*['\"][a-zA-Z0-9_\\-]{20,}['\"]"
