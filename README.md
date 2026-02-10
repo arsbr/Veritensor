@@ -1,11 +1,12 @@
 # 🛡️ Veritensor: AI Supply Chain Security
 
-[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/ArseniiBrazhnyk/veritensor-ai-model-security-scanner)
+[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/arsbr/veritensor-ai-model-security-scanner)
 [![PyPI version](https://img.shields.io/pypi/v/veritensor?color=blue&logo=pypi&logoColor=white)](https://pypi.org/project/veritensor/)
 [![Docker Image](https://img.shields.io/docker/v/arseniibrazhnyk/veritensor?label=docker&color=blue&logo=docker&logoColor=white)](https://hub.docker.com/r/arseniibrazhnyk/veritensor)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
-[![CI](https://github.com/ArseniiBrazhnyk/Veritensor/actions/workflows/scanner-ci.yaml/badge.svg)](https://github.com/ArseniiBrazhnyk/Veritensor/actions/workflows/scanner-ci.yaml)
-[![Security](https://github.com/ArseniiBrazhnyk/Veritensor/actions/workflows/security.yaml/badge.svg)](https://github.com/ArseniiBrazhnyk/Veritensor/actions/workflows/security.yaml)
+[![CI](https://github.com/arsbr/Veritensor/actions/workflows/scanner-ci.yaml/badge.svg)](https://github.com/arsbr/Veritensor/actions/workflows/scanner-ci.yaml)
+[![Security](https://github.com/arsbr/Veritensor/actions/workflows/security.yaml/badge.svg)](https://github.com/arsbr/Veritensor/actions/workflows/security.yaml)
+[![Security: Veritensor](https://img.shields.io/badge/Security-Veritensor-0096FF?style=flat&logo=security&logoColor=white)](https://github.com/arsbr/veritensor)
 
 **Veritensor** is an end-to-end security platform for the entire AI Life Cycle. It replaces traditional black-box scanning with deep semantic analysis, data supply chain protection, and cryptographic trust verification.
 
