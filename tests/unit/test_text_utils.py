@@ -10,20 +10,18 @@ def test_normalize_unicode():
     assert cyrillic_a != latin_a
     
     # Normalization check (NFKC converts compatible chars)
-    # Note: NFKC doesn't always map Cyrillic to Latin directly unless they are compatibility chars,
-    # but it handles half-width/full-width and other bypasses.
-    # Let's test Full-width 'Ａ' (U+FF21) -> 'A'
-    full_width_A = "\uff21"
+    full_width_A = "\uff21" # 'Ａ'
     assert normalize_text(full_width_A) == "A"
 
 def test_stealth_invisible_chars():
-    # Text with Zero Width Spaces
+    # Text with Zero Width Spaces (2 chars)
     text = "Normal\u200bText\u200bHidden"
     threats = detect_stealth_text(text)
     assert len(threats) == 0 # 2 chars is below threshold 5
 
-    # Heavy obfuscation
-    heavy_text = "H\u200bi\u200bd\u200bd\u200be\u200bn"
+    # Heavy obfuscation (6 chars - threshold triggered)
+    # H + hidden + i + hidden + d + hidden + d + hidden + e + hidden + n + hidden
+    heavy_text = "H\u200bi\u200bd\u200bd\u200be\u200bn\u200b"
     threats = detect_stealth_text(heavy_text)
     assert len(threats) > 0
     assert "invisible characters" in threats[0]
