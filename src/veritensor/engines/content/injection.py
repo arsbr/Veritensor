@@ -7,7 +7,8 @@ from typing import List, Generator, Set
 from pathlib import Path
 from veritensor.engines.static.rules import SignatureLoader
 from veritensor.engines.content.pii import PIIScanner
-from veritensor.core.text_utils import normalize_text, detect_stealth_text 
+from veritensor.core.text_utils import normalize_text, extract_base64_content
+from veritensor.core.file_utils import validate_file_extension 
 
 logger = logging.getLogger(__name__)
 
@@ -156,15 +157,26 @@ STEALTH_PATTERNS = [
 def scan_document(file_path: Path) -> List[str]:
     """
     Universal entry point for scanning documents (RAG Data).
-    Dispatches to specific extractors based on extension.
+    Dispatches to specific extractors based on extension and performs
+    deep inspection for injections, obfuscation, and PII.
     """
     ext = file_path.suffix.lower()
     threats = []
     
+    # Load signatures once
     signatures = SignatureLoader.get_prompt_injections()
 
     try:
+        # --- PHASE 0: File Integrity (Magic Numbers) ---
+        # Check if the file is an executable masquerading as a document (e.g. exe renamed to pdf)
+        extension_threat = validate_file_extension(file_path)
+        if extension_threat:
+            threats.append(extension_threat)
+            # CRITICAL: If it's a binary threat, do not attempt to parse as text
+            return threats
+            
         # --- PHASE 1: Raw Content Scan (Stealth Detection) ---
+        # Scan binary content for hidden strings before text extraction
         if ext in DOC_EXTS or ext in TEXT_EXTENSIONS:
             raw_threats = _scan_raw_binary(file_path)
             threats.extend(raw_threats)
@@ -172,6 +184,7 @@ def scan_document(file_path: Path) -> List[str]:
         # --- PHASE 2: Extracted Text Scan (Semantic Detection) ---
         text_generator = None
         
+        # Select appropriate extractor
         if ext in TEXT_EXTENSIONS:
             text_generator = _read_text_sliding(file_path)
         elif ext == ".pdf" and PDF_AVAILABLE:
@@ -184,6 +197,7 @@ def scan_document(file_path: Path) -> List[str]:
             full_text = _extract_text_from_pptx(file_path)
             text_generator = _yield_string_chunks(full_text)
         else:
+            # File type not supported for deep text scan, return accumulated threats
             return threats 
 
         # Scan Extracted Chunks
@@ -193,19 +207,36 @@ def scan_document(file_path: Path) -> List[str]:
             # --- 0. Normalization (Security Hardening) ---
             # Normalize Unicode (e.g. Cyrillic 'a' -> Latin 'a') to prevent bypasses
             normalized_chunk = normalize_text(chunk)
+            
+            # Prepare cleaned version for regex (collapsing whitespace)
+            clean_chunk = " ".join(normalized_chunk.split())
 
             # --- 1. Text Steganography Check ---
             # Check for zero-width characters and whitespace steganography
             stego_threats = detect_stealth_text(normalized_chunk)
             if stego_threats:
                 threats.extend(stego_threats)
-                # We don't return immediately here, as we want to check for injections too
 
-            # --- 2. Prompt Injection Logic ---
-            # Use normalized text for regex checks
-            clean_chunk = " ".join(normalized_chunk.split())
+            # --- 2. Base64 De-obfuscation (NEW) ---
+            # Extract potential Base64 strings and check them for malicious payloads
+            decoded_parts = extract_base64_content(clean_chunk)
+            for decoded in decoded_parts:
+                for pattern in signatures:
+                    # Check decoded content against signatures
+                    if pattern.startswith("regex:"):
+                        regex_str = pattern.replace("regex:", "", 1).strip()
+                        try:
+                            if re.search(regex_str, decoded, re.IGNORECASE):
+                                threats.append(f"HIGH: Obfuscated (Base64) Injection detected: '{pattern}'")
+                        except re.error:
+                            pass
+                    else:
+                        if pattern.lower() in decoded.lower():
+                            threats.append(f"HIGH: Obfuscated (Base64) Injection detected: '{pattern}'")
+
+            # --- 3. Prompt Injection Logic ---
             
-            # Check for Spaced/Obfuscated keywords
+            # A. Check for Spaced/Obfuscated keywords (e.g., "j a i l b r e a k")
             if len(clean_chunk) > 50 and (clean_chunk.count(" ") / len(clean_chunk)) > 0.3:
                 collapsed_chunk = clean_chunk.replace(" ", "")
                 CRITICAL_KEYWORDS = [
@@ -215,9 +246,10 @@ def scan_document(file_path: Path) -> List[str]:
                 for kw in CRITICAL_KEYWORDS:
                     if kw in collapsed_chunk.lower():
                         threats.append(f"HIGH: Obfuscated/Spaced Injection detected in {file_path.name}: '{kw}'")
+                        # Return immediately on high confidence threat
                         return threats
 
-            # Check Standard Signatures
+            # B. Check Standard Signatures
             for pattern in signatures:
                 is_hit = False
                 found_text = ""
@@ -240,7 +272,7 @@ def scan_document(file_path: Path) -> List[str]:
                     threats.append(f"HIGH: Prompt Injection detected in {file_path.name}: Found '{found_text}'")
                     return threats 
 
-            # --- 3. PII Scan ---
+            # --- 4. PII Scan ---
             # Use normalized chunk for better NLP recognition
             pii_threats = PIIScanner.scan(normalized_chunk)
             if pii_threats:
