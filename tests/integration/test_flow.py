@@ -2,6 +2,7 @@ import pytest
 import textwrap
 import pickle
 import os
+import json
 from pathlib import Path
 from typer.testing import CliRunner
 from unittest.mock import patch, MagicMock
