@@ -7,6 +7,85 @@ from typing import List, Generator, Set
 from pathlib import Path
 from veritensor.engines.static.rules import SignatureLoader
 from veritensor.engines.content.pii import PIIScanner
+from veritensor.core.text_utils import normalize_text, detect_stealth_text 
+
+logger = logging.getLogger(__name__)
+
+# Supported text formats for RAG scanning
+TEXT_EXTENSIONS = {
+    # Documentation & Markup
+    ".txt", ".md", ".markdown", ".rst", ".adoc", ".asciidoc", 
+    ".tex", ".org", ".wiki", ".html", ".htm", ".css",
+    
+    # Data & Configs
+    ".json", ".xml", ".yaml", ".yml", ".toml", 
+    ".ini", ".cfg", ".conf", ".env", ".properties", ".editorconfig",
+    
+    # Source Code
+    ".py", ".js", ".ts", ".java", ".c", ".cpp", ".h", ".hpp",
+    ".rs", ".go", ".rb", ".php", ".pl", ".lua",
+    ".sh", ".bash", ".zsh", ".ps1", ".bat", ".sql",
+    
+    # Infrastructure
+    ".dockerfile", ".tf", ".tfvars", ".k8s", ".helm", ".tpl",
+    ".gitignore", ".gitattributes",
+    
+    # Logs
+    ".log", ".out", ".err"
+}
+
+DOC_EXTS = {".pdf", ".docx", ".pptx"}
+
+# Import Optional Dependencies
+try:
+    import pypdf
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+
+try:
+    import docx
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+
+try:
+    from pptx import Presentation
+    PPTX_AVAILABLE = True
+except ImportError:
+    PPTX_AVAILABLE = False
+
+CHUNK_SIZE = 1024 * 1024 # 1MB chunks
+OVERLAP_SIZE = 4096      # 4KB overlap
+
+# --- STEALTH ATTACK SIGNATURES (CSS/HTML Hiding) ---
+STEALTH_PATTERNS = [
+    r"font-size:\s*0px",
+    r"font-size:\s*1px",
+    r"color:\s*white",
+    r"color:\s*#ffffff",
+    r"color:\s*#fff",
+    r"color:\s*transparent",
+    r"display:\s*none",
+    r"visibility:\s*hidden",
+    r"opacity:\s*0",
+    r"position:\s*absolute;\s*left:\s*-\d+px",
+    r"z-index:\s*-\d+",
+    r"<!--.*?ignore previous.*?-->", 
+    r"<span[^>]*style=.*?>.*?</span>" 
+]
+
+# Copyright 2025 Veritensor Security Apache 2.0
+# RAG Scanner: Detects Prompt Injections, PII, and Stealth Attacks (CSS/HTML hiding).
+
+import logging
+import re 
+from typing import List, Generator, Set
+from pathlib import Path
+from veritensor.engines.static.rules import SignatureLoader
+from veritensor.engines.content.pii import PIIScanner
+# --- NEW IMPORT ---
+from veritensor.core.text_utils import normalize_text, detect_stealth_text
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +156,7 @@ STEALTH_PATTERNS = [
 def scan_document(file_path: Path) -> List[str]:
     """
     Universal entry point for scanning documents (RAG Data).
+    Dispatches to specific extractors based on extension.
     """
     ext = file_path.suffix.lower()
     threats = []
@@ -110,8 +190,20 @@ def scan_document(file_path: Path) -> List[str]:
         for chunk in text_generator:
             if not chunk: continue
 
-            # A. Prompt Injection Logic
-            clean_chunk = " ".join(chunk.split())
+            # --- 0. Normalization (Security Hardening) ---
+            # Normalize Unicode (e.g. Cyrillic 'a' -> Latin 'a') to prevent bypasses
+            normalized_chunk = normalize_text(chunk)
+
+            # --- 1. Text Steganography Check ---
+            # Check for zero-width characters and whitespace steganography
+            stego_threats = detect_stealth_text(normalized_chunk)
+            if stego_threats:
+                threats.extend(stego_threats)
+                # We don't return immediately here, as we want to check for injections too
+
+            # --- 2. Prompt Injection Logic ---
+            # Use normalized text for regex checks
+            clean_chunk = " ".join(normalized_chunk.split())
             
             # Check for Spaced/Obfuscated keywords
             if len(clean_chunk) > 50 and (clean_chunk.count(" ") / len(clean_chunk)) > 0.3:
@@ -148,8 +240,9 @@ def scan_document(file_path: Path) -> List[str]:
                     threats.append(f"HIGH: Prompt Injection detected in {file_path.name}: Found '{found_text}'")
                     return threats 
 
-            # B. PII Scan
-            pii_threats = PIIScanner.scan(chunk)
+            # --- 3. PII Scan ---
+            # Use normalized chunk for better NLP recognition
+            pii_threats = PIIScanner.scan(normalized_chunk)
             if pii_threats:
                 threats.extend(pii_threats)
                 return threats
@@ -181,11 +274,9 @@ def _scan_raw_binary(path: Path) -> List[str]:
                 
                 # Check Stealth Patterns
                 for pattern in STEALTH_PATTERNS:
-                    # FIX: Capture the match object to report the ACTUAL found text
                     match = re.search(pattern, data, re.IGNORECASE)
                     if match:
                         found_text = match.group(0)
-                        # Truncate for log readability
                         if len(found_text) > 50: found_text = found_text[:47] + "..."
                         
                         threats.append(f"MEDIUM: Stealth/Hiding technique detected in {path.name} (Raw): '{found_text}'")
