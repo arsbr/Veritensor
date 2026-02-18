@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "veritensor"
-version = "1.5.0"
-description = "Zero-Trust Security Platform for the AI Supply Chain. Scans models, datasets, notebooks, and RAG documents for threats."
+version = "1.5.1"
+description = "Antivirus for the AI Supply Chain. Scans models, datasets, notebooks, and RAG documents for threats."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
