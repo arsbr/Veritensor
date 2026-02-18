@@ -1,4 +1,4 @@
-# 🛡️ Veritensor: AI Supply Chain Security
+# 🛡️ Veritensor: AI Data & Artifact Security
 
 [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/arsbr/veritensor-ai-model-security-scanner)
 [![PyPI version](https://img.shields.io/pypi/v/veritensor?color=blue&logo=pypi&logoColor=white)](https://pypi.org/project/veritensor/)
@@ -8,43 +8,41 @@
 [![Security](https://github.com/arsbr/Veritensor/actions/workflows/security.yaml/badge.svg)](https://github.com/arsbr/Veritensor/actions/workflows/security.yaml)
 [![Security: Veritensor](https://img.shields.io/badge/Security-Veritensor-0096FF?style=flat&logo=security&logoColor=white)](https://github.com/arsbr/veritensor)
 
-**Veritensor** is an end-to-end security platform for the entire AI Life Cycle. It replaces traditional black-box scanning with deep semantic analysis, data supply chain protection, and cryptographic trust verification.
+**Veritensor** is an end-to-end antivirus for the entire AI Life Cycle. It secures the entire AI Supply Chain by scanning artifacts that traditional tools miss: Models, Datasets, RAG Documents, and Notebooks.
 
-Unlike standard security tools, Veritensor provides a unified defense layer for every asset in your AI stack:
-1.  **Models:** Deep AST and Bytecode analysis of **Pickle, PyTorch, Keras, Safetensors, and GGUF** to block RCE, backdoors, and weight-tampering.
-2.  **Datasets:** High-speed streaming protection for **Parquet, CSV, and JSONL** to detect Data Poisoning, Malicious URLs, and PII.
-3.  **Notebooks:** Hardening of **Jupyter (.ipynb)** files by scanning code execution, markdown phishing, and identifying secrets leaked in cell outputs.
-4.  **RAG Knowledge Base:** Zero-trust extraction for **PDF, DOCX, and PPTX** to neutralize prompt injections before they reach your Vector Database.
-5.  **Supply Chain Trust:** Cryptographic signing of models and containers via **Sigstore**, ensuring that only verified assets reach your production environment.
+Unlike standard SAST tools (which focus on code), Veritensor understands the binary and serialized formats used in Machine Learning:
+1.  **Models:** Deep AST analysis of **Pickle, PyTorch, Keras, Safetensors** to block RCE and backdoors.
+2.  **Data & RAG:** Streaming scan of **Parquet, CSV, Excel, PDF** to detect Data Poisoning, Prompt Injections, and PII.
+3.  **Notebooks:** Hardening of **Jupyter (.ipynb)** files by detecting leaked secrets (using Entropy analysis), malicious magics, and XSS.
+4.  **Supply Chain:** Audits **dependencies** (`requirements.txt`, `poetry.lock`) for Typosquatting and known CVEs (via OSV.dev).
+5.  **Governance:** Generates cryptographic **Data Manifests** (Provenance) and signs containers via **Sigstore**.
 
 ---
 
 ## 🚀 Features
 
-*   **Deep Static Analysis:** Decompiles Pickle bytecode and Keras Lambda layers to find obfuscated attacks (e.g., `STACK_GLOBAL` exploits). Now supports deep scanning of **Zip archives** (PyTorch) and **Python Wheels**.
+*   **Parallel Scanning:** Utilizes all CPU cores to scan thousands of files in seconds. Includes robust **SQLite Caching** to skip unchanged files.
+*   **Stealth Detection:** Finds attacks hidden from humans but visible to LLMs. Detects **CSS Hiding** (white text, zero font), **Base64 Obfuscation**, and **Unicode Spoofing**.
+*   **Dataset Security:** Streams massive datasets (100GB+) to find "Poisoning" patterns (e.g., "Ignore previous instructions") and malicious URLs in **Parquet, CSV, JSONL, and Excel**.
+*   **Archive Inspection:** Safely scans inside **.zip, .tar.gz, .whl** files without extracting them to disk (Zip Bomb protected).
+*   **Dependency Audit:** Checks `pyproject.toml`, `poetry.lock`, and `Pipfile.lock` for malicious packages (Typosquatting) and vulnerabilities.
+*   **Data Provenance:** Command `veritensor manifest .` creates a signed JSON snapshot of your data artifacts for compliance (EU AI Act).
 *   **Identity Verification:** Automatically verifies model hashes against the official Hugging Face registry to detect Man-in-the-Middle attacks.
-*   **Dataset Poisoning Guard:** Scans massive datasets (100GB+) using **Streaming Analysis**. Detects "Ignore previous instructions" patterns and malicious URLs in Parquet, CSV, TSV, and JSONL.
-*   **Notebook Inspector:** Scans Jupyter `.ipynb` files for execution threats, malicious markdown (XSS/Phishing), and **leaked secrets in output cells**.
-*   **RAG Document Security:** Protects your knowledge base by scanning **PDF, DOCX, and PPTX** for prompt injections and PII before vectorization.
-*   **License Firewall:** Blocks models with restrictive licenses (e.g., Non-Commercial, AGPL). Veritensor performs a **hybrid check**: it inspects embedded file metadata first, and automatically falls back to the Hugging Face API if metadata is missing (requires `--repo`).
-*   **Supply Chain Security:** Integrates with **Sigstore Cosign** to sign Docker containers. Includes **timestamps** to prevent replay attacks.
-*   **CI/CD Native:** Supports direct scanning from **Amazon S3** and integrates with GitHub Actions, GitLab, and Pre-commit pipelines.
 
 ---
 
 ## 📦 Installation
 
-### Via PyPI (Recommended for local use)
-Veritensor is modular. Install only what you need to keep your environment lightweight:
+Veritensor is modular. Install only what you need to keep your environment lightweight (~50MB core).
 
 | Option | Command | Use Case |
 | :--- | :--- | :--- |
-| **Core** | `pip install veritensor` | Base model scanning (Pickle, Keras, Safetensors) |
-| **Data** | `pip install veritensor[data]` | Datasets (Parquet, TSV, Pandas support) |
-| **RAG** | `pip install veritensor[rag]` | Documents (PDF, DOCX, PPTX) |
-| **PII** | `pip install veritensor[pii]` | PII detection |
-| **AWS** | `pip install veritensor[aws]` | Direct scanning from S3 buckets |
-| **All** | `pip install veritensor[all]` | Full suite for enterprise security |
+| **Core** | `pip install veritensor` | Base scanner (Models, Notebooks, Dependencies) |
+| **Data** | `pip install "veritensor[data]"` | Datasets (Parquet, Excel, CSV) |
+| **RAG** | `pip install "veritensor[rag]"` | Documents (PDF, DOCX, PPTX) |
+| **PII** | `pip install "veritensor[pii]"` | ML-based PII detection (Presidio) |
+| **AWS** | `pip install "veritensor[aws]"` | Direct scanning from S3 buckets |
+| **All** | `pip install "veritensor[all]"` | Full suite for enterprise security |
 
 ### Via Docker (Recommended for CI/CD)
 ```bash
@@ -55,11 +53,64 @@ docker pull arseniibrazhnyk/veritensor:latest
 
 ## ⚡ Quick Start
 
-### 1. Scan a local model
-Check a file or directory for malware:
+### 1. Scan a local project (Parallel)
+Recursively scan a directory for all supported threats using 4 CPU cores:
 ```bash
-veritensor scan ./models/bert-base.pt
+veritensor scan ./my-rag-project --recursive --jobs 4
 ```
+
+### 2. Scan RAG Documents & Excel
+Check for Prompt Injections and Formula Injections in business data:
+```bash
+veritensor scan ./finance_data.xlsx
+veritensor scan ./docs/contract.pdf
+```
+
+### 3. Generate Data Manifest
+Create a compliance snapshot of your dataset folder:
+```bash
+veritensor manifest ./data --output provenance.json
+```
+
+### 4. Verify Model Integrity
+Ensure the file on your disk matches the official version from Hugging Face (detects tampering):
+```bash
+veritensor scan ./pytorch_model.bin --repo meta-llama/Llama-2-7b
+```
+
+### 5. Scan from Amazon S3
+Scan remote assets without manual downloading:
+```bash
+veritensor scan s3://my-ml-bucket/models/llama-3.pkl
+```
+
+### 6. Verify against Hugging Face
+Ensure the file on your disk matches the official version from the registry (detects tampering):
+```bash
+veritensor scan ./pytorch_model.bin --repo meta-llama/Llama-2-7b
+```
+
+### 7. License Compliance Check
+Veritensor automatically reads metadata from safetensors and GGUF files.
+If a model has a Non-Commercial license (e.g., cc-by-nc-4.0), it will raise a HIGH severity alert.
+
+To override this (Break-glass mode), use:
+```bash
+veritensor scan ./model.safetensors --force
+```
+
+### 8. Scan AI Datasets
+Veritensor uses streaming to handle huge files. It samples 10k rows by default for speed.
+```bash
+veritensor scan ./data/train.parquet --full-scan
+```
+
+### 9. Scan Jupyter Notebooks
+Check code cells, markdown, and saved outputs for threats:
+```bash
+veritensor scan ./research/experiment.ipynb
+```
+
 **Example Output:**
 ```Text
 ╭────────────────────────────────╮
@@ -73,39 +124,7 @@ veritensor scan ./models/bert-base.pt
 └──────────────┴────────┴──────────────────────────────────────┴────────────────┘
 ❌ BLOCKING DEPLOYMENT
 ```
-### 2. Verify against Hugging Face
-Ensure the file on your disk matches the official version from the registry (detects tampering):
-```bash
-veritensor scan ./pytorch_model.bin --repo meta-llama/Llama-2-7b
-```
 
-### 3. License Compliance Check
-Veritensor automatically reads metadata from safetensors and GGUF files.
-If a model has a Non-Commercial license (e.g., cc-by-nc-4.0), it will raise a HIGH severity alert.
-
-To override this (Break-glass mode), use:
-```bash
-veritensor scan ./model.safetensors --force
-```
----
-
-### 4. Scan AI Datasets
-Veritensor uses streaming to handle huge files. It samples 10k rows by default for speed.
-```bash
-veritensor scan ./data/train.parquet --full-scan
-```
-
-### 5. Scan Jupyter Notebooks
-Check code cells, markdown, and saved outputs for threats:
-```bash
-veritensor scan ./research/experiment.ipynb
-```
-
-### 6. Scan from Amazon S3
-Scan remote assets without manual downloading:
-```bash
-veritensor scan s3://my-ml-bucket/models/llama-3.pkl
-```
 ---
 
 ## 📊 Reporting & Compliance
@@ -163,28 +182,25 @@ cosign verify --key veritensor.pub my-org/my-app:v1.0.0
 Add this to your .github/workflows/security.yml to block malicious models in Pull Requests:
 ```yaml
 name: AI Security Scan
-
 on: [pull_request]
-
 jobs:
   veritensor-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4 # Recommended to use latest checkout
-      
-      - name: Veritensor AI Security Platform
-        uses: ArseniiBrazhnyk/Veritensor@v1.4.1
+      - uses: actions/checkout@v4
+      - name: Veritensor Scan
+        uses: ArseniiBrazhnyk/Veritensor@v1.5.1
         with:
-          path: '.'         # Scans everything: Models, Notebooks, Datasets, and Lock-files
-          force: 'false'
+          path: '.'
+          args: '--jobs 4'
 ```
 ### Pre-commit Hook
 
 Prevent committing malicious models to your repository. Add this to .pre-commit-config.yaml:
 ```yaml
 repos:
-  - repo: https://github.com/ArseniiBrazhnyk/Veritensor
-    rev: v1.4.1
+  - repo: https://github.com/arsbr/Veritensor
+    rev: v1.5.1
     hooks:
       - id: veritensor-scan
 ```
@@ -198,7 +214,9 @@ repos:
 | **Models** | `.pt`, `.pth`, `.bin`, `.pkl`, `.joblib`, `.h5`, `.keras`, `.safetensors`, `.gguf`, `.whl`  | AST Analysis, Pickle VM Emulation, Metadata Validation |
 | **Datasets** | `.parquet`, `.csv`, `.tsv`, `.jsonl`, `.ndjson`, `.ldjson` | Streaming Regex Scan (URLs, Injections, PII) |
 | **Notebooks** | `.ipynb` | JSON Structure Analysis + Code AST + Markdown Phishing |
-| **RAG Docs** | `.pdf`, `.docx`, `.pptx`, `.txt`, `.md` | Document Object Model (DOM) Text Extraction |
+| **Documents** | `.pdf`, `.docx`, `.pptx`, `.txt`, `.md`, `.html` | DOM Extraction, Stealth/CSS Detection, PII |
+| **Archives** | `.zip`, `.tar`, `.gz`, `.tgz`, `.whl` | Recursive In-Memory Inspection |
+| **RAG Docs** | `requirements.txt`, `poetry.lock`, `Pipfile.lock` | Typosquatting, OSV.dev CVE Lookup |
 
 ---
 
@@ -263,4 +281,4 @@ Veritensor uses a decoupled signature database (`signatures.yaml`) to detect mal
 
 ## 📜 License
 
-This project is licensed under the Apache 2.0 License - see the [LICENSE](https://github.com/ArseniiBrazhnyk/Veritensor?tab=Apache-2.0-1-ov-file#readme) file for details.
+This project is licensed under the Apache 2.0 License - see the [LICENSE](https://github.com/arsbr/Veritensor?tab=Apache-2.0-1-ov-file#readme) file for details.
