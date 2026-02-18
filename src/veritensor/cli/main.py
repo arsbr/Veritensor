@@ -307,7 +307,7 @@ def scan(
     is_machine_output = json_output or sarif_output or sbom_output
 
     if not is_machine_output:
-        console.print(Panel.fit(f"🛡️  [bold cyan]Veritensor Security Scanner[/bold cyan] v1.5.0", border_style="cyan"))
+        console.print(Panel.fit(f"🛡️  [bold cyan]Veritensor Security Scanner[/bold cyan] v1.5.1", border_style="cyan"))
 
     try:
         results = _run_scan_process(path, repo, jobs, ignore_license, full_scan, config, show_progress=not is_machine_output)
@@ -471,7 +471,7 @@ def update():
 
 @app.command()
 def version():
-    console.print("Veritensor v1.5.0 (Community Edition)")
+    console.print("Veritensor v1.5.1 (Community Edition)")
 
 @app.command()
 def init():
