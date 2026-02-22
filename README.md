@@ -23,7 +23,7 @@ Unlike standard SAST tools (which focus on code), Veritensor understands the bin
 
 ## 🚀 Features
 
-*   **Native RAG Firewall:** Embed Veritensor directly into `LangChain`, `LlamaIndex`, `ChromaDB`, and `Unstructured.io` to block threats at runtime.
+*   **Native RAG Security:** Embed Veritensor directly into `LangChain`, `LlamaIndex`, `ChromaDB`, and `Unstructured.io` to block threats at runtime.
 *   **High-Performance Parallel Scanning:** Utilizes all CPU cores with robust **SQLite Caching** (WAL mode). Re-scanning a 100GB dataset takes milliseconds if files haven't changed.
 *   **Advanced Stealth Detection:** Hackers hide prompt injections using CSS (`font-size: 0`, `color: white`) and HTML comments. Veritensor scans raw binary streams to catch what standard parsers miss.
 *   **Dataset Security:** Streams massive datasets (100GB+) to find "Poisoning" patterns (e.g., "Ignore previous instructions") and malicious URLs in **Parquet, CSV, JSONL, and Excel**.
