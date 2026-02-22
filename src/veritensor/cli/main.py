@@ -9,6 +9,7 @@ import json
 import os
 import datetime
 import requests
+import fnmatch
 import concurrent.futures
 import multiprocessing
 from pathlib import Path
@@ -74,6 +75,28 @@ NOISE_PATTERNS = [
     "Jupyter Magic", "Unsafe import", "Dangerous call", 
     "Metadata parse error", "Suspicious script/XSS", "Suspicious link"
 ]
+
+def load_ignore_patterns(ignore_file: str = ".veritensorignore") -> List[str]:
+    """Loads glob patterns from .veritensorignore file."""
+    patterns = []
+    ignore_path = Path(ignore_file)
+    if ignore_path.exists():
+        with open(ignore_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    patterns.append(line)
+    return patterns
+
+def is_ignored(file_path: Path, ignore_patterns: List[str]) -> bool:
+    """Checks if a file matches any of the ignore patterns."""
+    path_str = str(file_path)
+    name_str = file_path.name
+    for pattern in ignore_patterns:
+        # Match either full path or just filename
+        if fnmatch.fnmatch(path_str, pattern) or fnmatch.fnmatch(name_str, pattern):
+            return True
+    return False
 
 def is_noise(threat_msg: str) -> bool:
     for pattern in NOISE_PATTERNS:
@@ -221,10 +244,19 @@ def _run_scan_process(
         files_to_scan.append(path) 
     else:
         local_path = Path(path)
+        
+        # 1. Загружаем паттерны из .veritensorignore
+        ignore_patterns = load_ignore_patterns()
+        
         if local_path.is_file():
-            files_to_scan.append(local_path)
+            # 2. Проверяем одиночный файл
+            if not is_ignored(local_path, ignore_patterns):
+                files_to_scan.append(local_path)
         elif local_path.is_dir():
-            files_to_scan.extend([p for p in local_path.rglob("*") if p.is_file()])
+            # 3. Фильтруем файлы при рекурсивном обходе
+            for p in local_path.rglob("*"):
+                if p.is_file() and not is_ignored(p, ignore_patterns):
+                    files_to_scan.append(p)
         else:
             raise FileNotFoundError(f"Path {path} not found.")
 
