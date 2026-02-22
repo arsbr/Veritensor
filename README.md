@@ -186,6 +186,52 @@ secure_collection.add(
 ) # Blocks the malicious document automatically!
 ```
 
+### 4. Web Scraping & Data Ingestion (Apify / Crawlee / BeautifulSoup)
+Sanitize raw HTML or scraped text before it reaches your RAG pipeline or data lake.
+
+```python
+import requests
+from veritensor.engines.content.injection import scan_text
+
+def scrape_and_clean(url: str):
+    html_content = requests.get(url).text
+    
+    # 1. Scan raw HTML for stealth CSS hacks and prompt injections
+    threats = scan_text(html_content, source_name=url)
+    
+    if threats:
+        print(f"⚠️ Blocked poisoned website {url}: {threats[0]}")
+        return None # Drop the dirty data before it reaches your LLM pipeline
+        
+    # 2. If clean, proceed with normal extraction (Apify, BeautifulSoup, etc.)
+    # return extract_useful_data(html_content)
+```
+
+### 5. Apache Airflow / Prefect Operators 
+Block poisoned datasets from entering your data lake by adding Veritensor to your DAG using the standard `BashOperator`:
+
+```python
+from airflow import DAG
+from airflow.operators.bash import BashOperator
+from datetime import datetime
+
+with DAG('secure_rag_ingestion', start_date=datetime(2026, 1, 1)) as dag:
+    
+    # 1. Download data from external source
+    download_data = ... 
+
+    # 2. Scan data with Veritensor before processing
+    security_scan = BashOperator(
+        task_id='veritensor_scan',
+        bash_command='veritensor scan /opt/airflow/data/incoming --full-scan --jobs 4',
+    )
+
+    # 3. Ingest to Vector DB (Only runs if scan passes with exit code 0)
+    ingest_to_vectordb = ...
+
+    download_data >> security_scan >> ingest_to_vectordb
+```
+
 ---
 
 ## 📊 Reporting & Compliance
@@ -330,6 +376,16 @@ allowed_models:
 ```
 
 To generate a default configuration file, run: veritensor init
+
+### Ignoring Files (`.veritensorignore`)
+If you have test files or dummy data that trigger false positives, you can ignore them by creating a `.veritensorignore` file in your project root. It uses standard glob patterns (just like `.gitignore`).
+
+```text
+# .veritensorignore
+tests/dummy_data/*
+fake_secrets.ipynb
+*.dev.env
+```
 
 ---
 
