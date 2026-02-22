@@ -9,7 +9,6 @@ from veritensor.engines.static.rules import SignatureLoader
 from veritensor.engines.content.pii import PIIScanner
 from veritensor.core.text_utils import normalize_text, extract_base64_content
 from veritensor.core.file_utils import validate_file_extension 
-from veritensor.engines.content.injection import scan_text
 
 logger = logging.getLogger(__name__)
 
