@@ -1,4 +1,4 @@
-name: 'Veritensor AI Security Scanner'
+name: 'Veritensor: AI Artifacts & Data Security'
 description: 'Secure your AI supply chain. Scans Models, Notebooks, and RAG documents for malware, secrets, and PII.'
 author: 'ArseniiBrazhnyk'
 branding:
