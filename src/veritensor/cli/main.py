@@ -341,7 +341,7 @@ def scan(
     is_machine_output = json_output or sarif_output or sbom_output
 
     if not is_machine_output:
-        console.print(Panel.fit(f"🛡️  [bold cyan]Veritensor Security Scanner[/bold cyan] v1.6.0", border_style="cyan"))
+        console.print(Panel.fit(f"🛡️  [bold cyan]Veritensor Security Scanner[/bold cyan] v1.6.1", border_style="cyan"))
 
     try:
         # ПЕРЕДАЕМ paths (список) вместо path (строка)
@@ -503,7 +503,7 @@ def update():
 
 @app.command()
 def version():
-    console.print("Veritensor v1.6.0 (Community Edition)")
+    console.print("Veritensor v1.6.1 (Community Edition)")
 
 @app.command()
 def init():
