@@ -1,8 +1,9 @@
 - id: veritensor-scan
   name: Veritensor AI Security Scanner
-  description: Scans AI models, Notebooks, and RAG documents for malware and secrets.
+  description: Scans AI models, Datasets, Notebooks, and RAG documents for malware, poisoning, and secrets.
   entry: veritensor scan
   language: python
   types: [file]
-  files: \.(pt|pth|bin|pkl|ckpt|h5|keras|safetensors|gguf|ipynb|pdf|docx|md)$
+  files: (\.(pt|pth|bin|pkl|ckpt|h5|keras|safetensors|gguf|ipynb|pdf|docx|pptx|md|markdown|rst|adoc|asciidoc|tex|org|wiki|html|htm|css|parquet|csv|tsv|jsonl|xlsx|zip|tar|json|xml|yaml|yml|toml|ini|cfg|conf|env|properties|editorconfig|py|js|ts|java|c|cpp|h|hpp|rs|go|rb|php|pl|lua|sh|bash|zsh|ps1|bat|sql|log|out|err)|Dockerfile)$
   require_serial: true
+  additional_dependencies: ["veritensor[all]"]
