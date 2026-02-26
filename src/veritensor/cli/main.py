@@ -89,12 +89,11 @@ def load_ignore_patterns(ignore_file: str = ".veritensorignore") -> List[str]:
     return patterns
 
 def is_ignored(file_path: Path, ignore_patterns: List[str]) -> bool:
-    """Checks if a file matches any of the ignore patterns."""
-    path_str = str(file_path)
-    name_str = file_path.name
+    """Checks if a file matches any of the ignore patterns (supports directory matching)."""
     for pattern in ignore_patterns:
-        # Match either full path or just filename
-        if fnmatch.fnmatch(path_str, pattern) or fnmatch.fnmatch(name_str, pattern):
+        if file_path.match(pattern) or file_path.name == pattern:
+            return True
+        if any(p.match(pattern) or p.name == pattern for p in file_path.parents):
             return True
     return False
 
@@ -116,16 +115,21 @@ def check_severity(threats: List[str], threshold: str) -> bool:
 # --- WORKER FUNCTION ---
 def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bool]) -> ScanResult:
     file_path_str, config, repo, ignore_license, full_scan_dataset, is_s3 = args
-    
+    ConfigLoader._instance = config
+
     if is_s3:
         file_name = file_path_str.split("/")[-1]
-        ext = os.path.splitext(file_name)[1].lower()
+        # ИСправлено: используем Path для извлечения ВСЕХ суффиксов (e.g. .tar.gz)
+        ext = "".join(Path(file_name).suffixes).lower()
+        if not ext: 
+            ext = Path(file_name).suffix.lower()
         file_path = None 
     else:
         file_path = Path(file_path_str)
         file_name = file_path.name
         ext = "".join(file_path.suffixes).lower()
-        if not ext: ext = file_path.suffix.lower()
+        if not ext: 
+            ext = file_path.suffix.lower()
     
     filename_lower = file_name.lower()
     scan_res = ScanResult(file_path=file_path_str)
