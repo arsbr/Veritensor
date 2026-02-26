@@ -18,7 +18,7 @@ def generate_manifest(results: List[ScanResult], output_path: str = "veritensor-
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "tool": {
             "name": "veritensor",
-            "version": "1.6.0", # Bumped version
+            "version": "1.6.1", 
             "python": platform.python_version(),
             "system": platform.system()
         },
