@@ -302,10 +302,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Veritensor Scan
-        uses: ArseniiBrazhnyk/Veritensor@v1.6.0
+        uses: arsbr/Veritensor@v1.6.0 
         with:
           path: '.'
-          args: '--jobs 4'
+          jobs: '4'
 ```
 ### Pre-commit Hook
 
@@ -317,7 +317,20 @@ repos:
     hooks:
       - id: veritensor-scan
 ```
+### GitLab CI (Enterprise / On-Premise)
 
+For self-hosted GitLab environments, you can easily integrate Veritensor using our official Docker image. Add this stage to your `.gitlab-ci.yml`:
+
+```yaml
+stages:
+  - security_scan
+
+veritensor_audit:
+  stage: security_scan
+  image: arseniibrazhnyk/veritensor:latest
+  script:
+    - veritensor scan . --jobs 4
+  allow_failure: false
 ---
 
 ## 📂 Supported Formats
