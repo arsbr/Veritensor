@@ -317,7 +317,7 @@ def _run_scan_process(
 
 @app.command()
 def scan(
-    path: str = typer.Argument(..., help="Path to model file, directory, or S3 URL"),
+    paths: List[str] = typer.Argument(..., help="Paths to files, directories, or S3 URL"), ...),
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Hugging Face Repo ID"),
     image: Optional[str] = typer.Option(None, help="Docker image tag to sign"),
     ignore_license: bool = typer.Option(False, "--ignore-license", help="Do not fail on license violations"),
