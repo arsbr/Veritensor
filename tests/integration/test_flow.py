@@ -128,7 +128,7 @@ def test_s3_scan_flow():
     result = runner.invoke(app, ["scan", "s3://bucket/model.pkl"])
     # We check that the flow reaches the engine without a Python Traceback
     assert "Traceback" not in result.stdout
-
+    
 def test_cli_manifest_generation(tmp_path):
     """
     Test 7: Verify manifest generation command.
@@ -139,7 +139,8 @@ def test_cli_manifest_generation(tmp_path):
     
     manifest_path = tmp_path / "provenance.json"
     
-    result = runner.invoke(app, ["manifest", str(tmp_path), "-o", str(manifest_path)])
+    # Передаем путь к директории
+    result = runner.invoke(app,["manifest", str(tmp_path), "-o", str(manifest_path)])
     
     assert result.exit_code == 0
     assert "Manifest saved" in result.stdout
@@ -149,3 +150,4 @@ def test_cli_manifest_generation(tmp_path):
         data = json.load(f)
         assert data["summary"]["total_files"] >= 2
         assert data["tool"]["name"] == "veritensor"
+
