@@ -11,6 +11,11 @@ inputs:
     required: true
     default: '.'
   
+  jobs:
+    description: 'Number of parallel jobs (e.g., 4). Speeds up scanning.'
+    required: false
+    default: '2'
+  
   repo:
     description: 'Hugging Face Repository ID (e.g. meta-llama/Llama-2-7b) for hash verification.'
     required: false
@@ -51,18 +56,15 @@ runs:
       shell: bash
       run: |
         pip install --upgrade pip
-        # Install with PII and AWS dependencies for full coverage
-        pip install "veritensor[aws,pii,data]"
-        # Uploading a model for PII (if needed)
-        python -m spacy download en_core_web_lg || echo "Spacy download skipped or failed, continuing..."
+        pip install "veritensor[all]"
+        python -m spacy download en_core_web_lg || echo "Spacy download skipped"
 
     - name: Run Veritensor Scan
       shell: bash
       env:
         VERITENSOR_HF_TOKEN: ${{ inputs.hf_token }}
       run: |
-        # Collecting flags
-        CMD="veritensor scan ${{ inputs.path }}"
+        CMD="veritensor scan ${{ inputs.path }} --jobs ${{ inputs.jobs }}"
         
         if [ "${{ inputs.repo }}" != "" ]; then
           CMD="$CMD --repo ${{ inputs.repo }}"
