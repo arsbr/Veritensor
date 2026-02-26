@@ -88,5 +88,3 @@ class ConfigLoader:
         from veritensor.engines.static.pickle_engine import SAFE_MODULES as DEFAULT_SAFE
         config = cls.load()
         return DEFAULT_SAFE.union(set(config.allowed_modules))
-
-settings = ConfigLoader()
