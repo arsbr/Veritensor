@@ -229,7 +229,7 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
 
 # --- SHARED SCAN LOGIC ---
 def _run_scan_process(
-    path: str, repo: Optional[str], jobs: Optional[int], 
+    paths: List[str], repo: Optional[str], jobs: Optional[int], 
     ignore_license: bool, full_scan: bool, config: VeritensorConfig,
     show_progress: bool = True
 ) -> List[ScanResult]:
@@ -237,47 +237,44 @@ def _run_scan_process(
     Core logic to collect files and run parallel scan.
     Used by both 'scan' and 'manifest' commands.
     """
-    files_to_scan = []
-    is_s3 = path.startswith("s3://")
+    files_to_scan =[]
+    ignore_patterns = load_ignore_patterns() # Загружаем .veritensorignore
     
-    if is_s3:
-        files_to_scan.append(path) 
-    else:
-        local_path = Path(path)
-        
-        # 1. Загружаем паттерны из .veritensorignore
-        ignore_patterns = load_ignore_patterns()
-        
-        if local_path.is_file():
-            # 2. Проверяем одиночный файл
-            if not is_ignored(local_path, ignore_patterns):
-                files_to_scan.append(local_path)
-        elif local_path.is_dir():
-            # 3. Фильтруем файлы при рекурсивном обходе
-            for p in local_path.rglob("*"):
-                if p.is_file() and not is_ignored(p, ignore_patterns):
-                    files_to_scan.append(p)
+    # 1. Collect Files from all paths
+    for path in paths:
+        is_s3 = path.startswith("s3://")
+        if is_s3:
+            files_to_scan.append(path) 
         else:
-            raise FileNotFoundError(f"Path {path} not found.")
+            local_path = Path(path)
+            if local_path.is_file():
+                if not is_ignored(local_path, ignore_patterns):
+                    files_to_scan.append(local_path)
+            elif local_path.is_dir():
+                for p in local_path.rglob("*"):
+                    if p.is_file() and not is_ignored(p, ignore_patterns):
+                        files_to_scan.append(p)
+            else:
+                raise FileNotFoundError(f"Path {path} not found.")
 
     if not files_to_scan:
-        return []
+        return[]
 
     hash_cache = HashCache()
-    results = []
+    results =[]
     
     if jobs is None:
         try: jobs = multiprocessing.cpu_count()
         except NotImplementedError: jobs = 1
     if len(files_to_scan) == 1: jobs = 1
 
-    tasks = []
-    if not is_s3:
-        for f in files_to_scan:
-            tasks.append((str(f), config, repo, ignore_license, full_scan, False))
-    else:
-        tasks.append((path, config, repo, ignore_license, full_scan, True))
+    # 2. Prepare Tasks
+    tasks =[]
+    for f in files_to_scan:
+        is_s3 = str(f).startswith("s3://")
+        tasks.append((str(f), config, repo, ignore_license, full_scan, is_s3))
 
+    # 3. Execute
     executor = None
     try:
         with Progress(
@@ -299,6 +296,7 @@ def _run_scan_process(
             
             for future in concurrent.futures.as_completed(future_to_file):
                 file_p = future_to_file[future]
+                is_s3 = file_p.startswith("s3://")
                 try:
                     res = future.result()
                     results.append(res)
@@ -317,7 +315,7 @@ def _run_scan_process(
 
 @app.command()
 def scan(
-    paths: List[str] = typer.Argument(..., help="Paths to files, directories, or S3 URL"),
+    paths: List[str] = typer.Argument(..., help="Paths to files, directories, or S3 URLs"),
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Hugging Face Repo ID"),
     image: Optional[str] = typer.Option(None, help="Docker image tag to sign"),
     ignore_license: bool = typer.Option(False, "--ignore-license", help="Do not fail on license violations"),
@@ -342,9 +340,10 @@ def scan(
         console.print(Panel.fit(f"🛡️  [bold cyan]Veritensor Security Scanner[/bold cyan] v1.6.0", border_style="cyan"))
 
     try:
-        results = _run_scan_process(path, repo, jobs, ignore_license, full_scan, config, show_progress=not is_machine_output)
-    except FileNotFoundError:
-        console.print(f"[bold red]Error:[/bold red] Path {path} not found.")
+        # ПЕРЕДАЕМ paths (список) вместо path (строка)
+        results = _run_scan_process(paths, repo, jobs, ignore_license, full_scan, config, show_progress=not is_machine_output)
+    except FileNotFoundError as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
         raise typer.Exit(code=1)
 
     if not results:
@@ -358,7 +357,7 @@ def scan(
     filtered_results = []
 
     for res in results:
-        real_threats = [t for t in res.threats if not is_noise(t)]
+        real_threats =[t for t in res.threats if not is_noise(t)]
         
         if res.status == "FAIL":
             if real_threats:
@@ -379,7 +378,7 @@ def scan(
     if sarif_output: print(generate_sarif_report(results))
     elif sbom_output: print(generate_sbom(results))
     elif json_output:
-        results_dicts = [r.__dict__ for r in results]
+        results_dicts =[r.__dict__ for r in results]
         print(json.dumps(results_dicts, indent=2))
     else:
         _print_table(filtered_results)
@@ -391,7 +390,7 @@ def scan(
     # Decision Logic
     exit_code = 0
     sign_status = "clean"
-    block_reasons = []
+    block_reasons =[]
 
     if found_malware or found_integrity_issue:
         if ignore_malware:
@@ -421,7 +420,7 @@ def scan(
 
 @app.command()
 def manifest(
-    path: str = typer.Argument(..., help="Path to scan"),
+    paths: List[str] = typer.Argument(..., help="Paths to scan"), # ИСПРАВЛЕНО ЗДЕСЬ ТОЖЕ
     output: str = typer.Option("veritensor-manifest.json", "--output", "-o", help="Output file path"),
     full_scan: bool = typer.Option(False, "--full-scan", help="Scan entire dataset."),
     jobs: int = typer.Option(None, "--jobs", "-j", help="Number of parallel jobs."),
@@ -431,19 +430,16 @@ def manifest(
     Does NOT block on errors, just records them.
     """
     config = ConfigLoader.load()
-    console.print(f"📜 Generating Manifest for [cyan]{path}[/cyan]...")
+    console.print(f"📜 Generating Manifest for [cyan]{paths}[/cyan]...")
     
     try:
-        results = _run_scan_process(path, None, jobs, True, full_scan, config, show_progress=True)
-    except FileNotFoundError:
-        console.print(f"[bold red]Error:[/bold red] Path {path} not found.")
+        results = _run_scan_process(paths, None, jobs, True, full_scan, config, show_progress=True)
+    except FileNotFoundError as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
         raise typer.Exit(code=1)
 
     saved_path = generate_manifest(results, output)
     console.print(f"[green]✅ Manifest saved to: {saved_path}[/green]")
-
-# ... (Helpers: _print_table, _perform_signing, keygen, update, version, init remain the same) ...
-
 def _print_table(results: List[ScanResult]):
     table = Table(title="🛡️ Veritensor Scan Report", header_style="bold magenta")
     table.add_column("File", style="cyan", no_wrap=True)
