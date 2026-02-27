@@ -27,17 +27,17 @@ class PIIScanner:
 
         if cls._engine is None and cls._init_error is None:
             try:
-                # Load NLP engine. Requires: python -m spacy download en_core_web_lg
-                # Score threshold 0.4 filters out weak matches
-                cls._engine = AnalyzerEngine(default_score_threshold=0.4)
-            except OSError as e:
-                if "Can't find model" in str(e):
-                    cls._init_error = (
-                        "Spacy model missing. Run: python -m spacy download en_core_web_lg"
-                    )
-                else:
-                    cls._init_error = str(e)
-                logger.warning(f"PII Engine Init Failed: {cls._init_error}")
+                model_name = "en_core_web_sm"
+                
+                if not spacy.util.is_package(model_name):
+                    logger.info(f"Downloading lightweight PII model ({model_name})...")
+                    spacy_download(model_name)
+
+                cls._engine = AnalyzerEngine(
+                    default_score_threshold=0.4,
+                    supported_languages=["en"],
+                    nlp_engine_args={"nlp_engine_name": "spacy", "models": [{"lang_code": "en", "model_name": model_name}]}
+                )
             except Exception as e:
                 cls._init_error = str(e)
                 logger.warning(f"PII Engine Init Failed: {e}")
