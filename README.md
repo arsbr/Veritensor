@@ -412,7 +412,7 @@ Veritensor uses a decoupled signature database (`signatures.yaml`) to detect mal
     ```
 *   **Transparent Rules:** You can inspect the default signatures in `src/veritensor/engines/static/signatures.yaml`.
 *   **Custom Policies:** If the default rules are too strict for your use case (false positives), use `veritensor.yaml` to whitelist specific modules or models.
-
+*   **📖 Deep Dive:** For a comprehensive guide on threat database, real world attacks and signature syntax visit our [Official Documentation →](https://guide.veritensor.com)
   ---
 
 ## 📜 License
