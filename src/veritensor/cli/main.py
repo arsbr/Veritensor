@@ -5,6 +5,7 @@
 import sys
 import typer
 import logging
+import warnings
 import json
 import os
 import datetime
@@ -55,6 +56,11 @@ from veritensor.integrations.huggingface import HuggingFaceClient
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("veritensor")
+
+logging.getLogger("presidio-analyzer").setLevel(logging.ERROR)
+logging.getLogger("presidio-anonymizer").setLevel(logging.ERROR)
+warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
+
 app = typer.Typer(help="Veritensor: AI Model Security Scanner & Gatekeeper")
 console = Console()
 
@@ -508,7 +514,7 @@ def version():
 @app.command()
 def init():
     config_content = """# Veritensor Configuration
-fail_on_severity: CRITICAL
+fail_on_severity: HIGH
 fail_on_missing_license: false
 custom_restricted_licenses: ["cc-by-nc"]
 """
