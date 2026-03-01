@@ -7,7 +7,7 @@ RUN apt-get update && apt-get upgrade -y && \
     rm -rf /var/lib/apt/lists/*
 
 # --- Install Cosign (Sigstore) ---
-COPY --from=gcr.io/projectsigstore/cosign:v3.0.5 /ko-app/cosign /usr/local/bin/cosign
+COPY --from=gcr.io/projectsigstore/cosign:lastes /ko-app/cosign /usr/local/bin/cosign
 
 # --- Install Veritensor ---
 WORKDIR /app
