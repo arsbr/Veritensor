@@ -125,7 +125,7 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
 
     if is_s3:
         file_name = file_path_str.split("/")[-1]
-        # ИСправлено: используем Path для извлечения ВСЕХ суффиксов (e.g. .tar.gz)
+        # Using Path to extract ALL suffixes (e.g. .tar.gz )
         ext = "".join(Path(file_name).suffixes).lower()
         if not ext: 
             ext = Path(file_name).suffix.lower()
@@ -195,7 +195,7 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
                 if file_path:
                     threats = scan_dependencies(file_path)
                     for t in threats: scan_res.add_threat(t)
-        # --- NEW ENGINES ---
+        # --- ENGINES ---
         elif ext in EXCEL_EXTS:
             if is_s3: scan_res.add_threat("WARNING: S3 scanning not supported for Excel yet.")
             else:
@@ -248,7 +248,7 @@ def _run_scan_process(
     Used by both 'scan' and 'manifest' commands.
     """
     files_to_scan =[]
-    ignore_patterns = load_ignore_patterns() # Загружаем .veritensorignore
+    ignore_patterns = load_ignore_patterns() # Load .veritensorignore
     
     # 1. Collect Files from all paths
     for path in paths:
@@ -347,10 +347,10 @@ def scan(
     is_machine_output = json_output or sarif_output or sbom_output
 
     if not is_machine_output:
-        console.print(Panel.fit(f"🛡️  [bold cyan]Veritensor Security Scanner[/bold cyan] v1.6.1", border_style="cyan"))
+        console.print(Panel.fit(f"🛡️  [bold cyan]Veritensor Security Scanner[/bold cyan] v1.6.2", border_style="cyan"))
 
     try:
-        # ПЕРЕДАЕМ paths (список) вместо path (строка)
+        # PASSING paths (list) instead of path (string)
         results = _run_scan_process(paths, repo, jobs, ignore_license, full_scan, config, show_progress=not is_machine_output)
     except FileNotFoundError as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
@@ -430,7 +430,7 @@ def scan(
 
 @app.command()
 def manifest(
-    paths: List[str] = typer.Argument(..., help="Paths to scan"), # ИСПРАВЛЕНО ЗДЕСЬ ТОЖЕ
+    paths: List[str] = typer.Argument(..., help="Paths to scan"), 
     output: str = typer.Option("veritensor-manifest.json", "--output", "-o", help="Output file path"),
     full_scan: bool = typer.Option(False, "--full-scan", help="Scan entire dataset."),
     jobs: int = typer.Option(None, "--jobs", "-j", help="Number of parallel jobs."),
@@ -509,7 +509,7 @@ def update():
 
 @app.command()
 def version():
-    console.print("Veritensor v1.6.1 (Community Edition)")
+    console.print("Veritensor v1.6.2 (Community Edition)")
 
 @app.command()
 def init():
