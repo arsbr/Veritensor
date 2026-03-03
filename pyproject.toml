@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "veritensor"
-version = "1.6.1"
+version = "1.6.2"
 description = "Antivirus for the AI Supply Chain. Scans models, datasets, notebooks, and RAG documents for threats."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
 authors = [
-  {name = "Arsenii Brazhnyk", email = "arsenii.brazhnyk@gmail.com"} 
+  {name = "Arsenii Brazhnyk", email = "veritensor@gmail.com"} 
 ]
 keywords = ["security", "ai", "mlops", "malware-detection", "supply-chain", "devsecops", "rag", "data-poisoning"]
 classifiers = [
@@ -83,9 +83,9 @@ dev = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/ArseniiBrazhnyk/Veritensor"
-"Bug Tracker" = "https://github.com/ArseniiBrazhnyk/Veritensor/issues"
-"Documentation" = "https://github.com/ArseniiBrazhnyk/Veritensor#readme"
+"Homepage" = "https://github.com/arsbr/Veritensor"
+"Bug Tracker" = "https://github.com/arsbr/Veritensor/issues"
+"Documentation" = "https://github.com/arsbr/Veritensor#readme"
 
 [project.scripts]
 veritensor = "veritensor.cli.main:app"
