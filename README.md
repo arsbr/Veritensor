@@ -302,7 +302,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Veritensor Scan
-        uses: arsbr/Veritensor@v1.6.1 
+        uses: arsbr/Veritensor@v1.6.2 
         with:
           path: '.'
           jobs: '4'
@@ -313,7 +313,7 @@ Prevent committing malicious models to your repository. Add this to .pre-commit-
 ```yaml
 repos:
   - repo: https://github.com/arsbr/Veritensor
-    rev: v1.6.1
+    rev: v1.6.2
     hooks:
       - id: veritensor-scan
 ```
