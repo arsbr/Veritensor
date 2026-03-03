@@ -223,11 +223,19 @@ def scan_document(file_path: Path) -> List[str]:
 
         # PHASE 2: Extracted Text Scan
         text_generator = None
-        if ext in TEXT_EXTENSIONS: text_generator = _read_text_sliding(file_path)
-        elif ext == ".pdf" and PDF_AVAILABLE: text_generator = _yield_string_chunks(_read_pdf(file_path))
-        elif ext == ".docx" and DOCX_AVAILABLE: text_generator = _yield_string_chunks(_read_docx(file_path))
-        elif ext == ".pptx" and PPTX_AVAILABLE: text_generator = _yield_string_chunks(_extract_text_from_pptx(file_path))
-        else: return threats 
+        if ext in TEXT_EXTENSIONS: 
+            text_generator = _read_text_sliding(file_path)
+        elif ext == ".pdf":
+            if not PDF_AVAILABLE: return["WARNING: pypdf not installed. Run 'pip install veritensor[rag]'"]
+            text_generator = _yield_string_chunks(_read_pdf(file_path))
+        elif ext == ".docx":
+            if not DOCX_AVAILABLE: return["WARNING: python-docx not installed."]
+            text_generator = _yield_string_chunks(_read_docx(file_path))
+        elif ext == ".pptx":
+            if not PPTX_AVAILABLE: return["WARNING: python-pptx not installed."]
+            text_generator = _yield_string_chunks(_extract_text_from_pptx(file_path))
+        else:
+            return threats
 
         for chunk in text_generator:
             chunk_threats = scan_text(chunk, source_name=file_path.name)
