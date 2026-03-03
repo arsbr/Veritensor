@@ -14,6 +14,8 @@ DANGEROUS_EXTENSIONS = {
     ".exe", ".bat", ".ps1", ".sh", ".vbs", ".jar", ".apk", ".scr"
 }
 
+MAX_ARCHIVE_FILES = 10000 # File limit to protect against endless loops
+
 def scan_archive(file_path: Path) -> List[str]:
     threats = []
     ext = file_path.suffix.lower()
@@ -30,23 +32,24 @@ def scan_archive(file_path: Path) -> List[str]:
 
     return threats
 
+
 def _scan_zip(path: Path) -> List[str]:
-    threats = []
+    threats =[]
     try:
         with zipfile.ZipFile(path, 'r') as z:
-            # 1. Security Check (Zip Bomb)
             SafeZipReader.validate(z)
             
-            # 2. File Listing Analysis
-            for info in z.infolist():
+            # Protection from a huge number of files 
+            file_list = z.infolist()
+            if len(file_list) > MAX_ARCHIVE_FILES:
+                return[f"CRITICAL: Archive contains too many files (> {MAX_ARCHIVE_FILES}). Possible Zip Bomb."]
+
+            for info in file_list:
                 fname = info.filename
                 fext = Path(fname).suffix.lower()
                 
-                # Check for executable malware inside archive
                 if fext in DANGEROUS_EXTENSIONS:
                     threats.append(f"HIGH: Executable found inside archive: '{fname}'")
-                
-                # Check for nested archives (Zip Bomb trait)
                 if fext in {".zip", ".tar", ".gz", ".rar"}:
                     threats.append(f"MEDIUM: Nested archive found: '{fname}' (Possible evasion)")
 
@@ -62,7 +65,16 @@ def _scan_tar(path: Path) -> List[str]:
     try:
         # Tarfiles don't have a central directory like Zip, so we iterate
         with tarfile.open(path, 'r:*') as tar:
+            file_count = 0
+            
             for member in tar:
+                file_count += 1
+                
+                # Protection against Tar bombs and infinite loops
+                if file_count > MAX_ARCHIVE_FILES:
+                    threats.append(f"CRITICAL: Archive contains too many files (> {MAX_ARCHIVE_FILES}). Possible Tar Bomb.")
+                    break
+                    
                 if not member.isfile(): continue
                 
                 fname = member.name
