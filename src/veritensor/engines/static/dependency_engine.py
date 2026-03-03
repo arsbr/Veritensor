@@ -158,11 +158,16 @@ def _check_osv_batch(packages: Dict[str, str]) -> List[str]:
         
     try:
         response = requests.post(OSV_API_URL, json=payload, timeout=5)
-        if response.status_code != 200:
+        
+    
+        if response.status_code == 429:
+            logger.warning("OSV.dev API rate limit exceeded.")
+            return["WARNING: OSV.dev API rate limit exceeded. Vulnerability check skipped."]
+        elif response.status_code != 200:
             logger.debug(f"OSV API Error {response.status_code}: {response.text}")
-            return []
+            return[f"WARNING: OSV.dev API unavailable (HTTP {response.status_code})."]
             
-        results = response.json().get("results", [])
+        results = response.json().get("results",[])
         for i, res in enumerate(results):
             if "vulns" in res:
                 name, ver = pkg_list[i]
@@ -171,8 +176,11 @@ def _check_osv_batch(packages: Dict[str, str]) -> List[str]:
                     summary = vuln.get("summary", "Security vulnerability detected")
                     threats.append(f"HIGH: Vulnerability in {name}=={ver}: [{v_id}] {summary}")
                     
+    except requests.exceptions.Timeout:
+        return ["WARNING: OSV.dev API timeout. Vulnerability check skipped."]
     except Exception as e:
         logger.debug(f"OSV connection failed: {e}")
+        return["WARNING: Failed to connect to OSV.dev vulnerability database."]
         
     return threats
 
