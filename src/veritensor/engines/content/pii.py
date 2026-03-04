@@ -3,11 +3,16 @@
 
 import logging
 from typing import List
+import warnings
+
+warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
 
 logger = logging.getLogger(__name__)
 
 try:
     from presidio_analyzer import AnalyzerEngine
+    import spacy
+    from spacy.cli import download as spacy_download
     PRESIDIO_AVAILABLE = True
 except ImportError:
     PRESIDIO_AVAILABLE = False
@@ -28,7 +33,8 @@ class PIIScanner:
         if cls._engine is None and cls._init_error is None:
             try:
                 model_name = "en_core_web_sm"
-                
+
+                # Check and download the model, if necessary
                 if not spacy.util.is_package(model_name):
                     logger.info(f"Downloading lightweight PII model ({model_name})...")
                     spacy_download(model_name)
