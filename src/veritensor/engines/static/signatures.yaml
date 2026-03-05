@@ -419,6 +419,6 @@ prompt_injections:
   # GENERIC / HIGH ENTROPY FALLBACKS
   # =================================================================
   # Generic Private Key Headers
-  - "regex:-----BEGIN [A-Z ]+ PRIVATE KEY"
+  - "regex:-----BEGIN [A-Z ]+ PRIVATE KEY-----"
   # Generic API Key assignment (Python style)
   - "regex:(?i)(api_key|secret|token)\\s*=\\s*['\"][a-zA-Z0-9_\\-]{20,}['\"]"
