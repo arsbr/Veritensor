@@ -1,0 +1,95 @@
+name: 'Veritensor: AI Artifacts & Data Security'
+description: 'Secure your AI supply chain. Scans Models, Notebooks, and RAG documents for malware, secrets, and PII.'
+author: 'ArseniiBrazhnyk'
+branding:
+  icon: 'shield'
+  color: 'purple'
+
+inputs:
+  path:
+    description: 'Path to the file or directory to scan.'
+    required: true
+    default: '.'
+  
+  jobs:
+    description: 'Number of parallel jobs (e.g., 4). Speeds up scanning.'
+    required: false
+    default: '2'
+  
+  repo:
+    description: 'Hugging Face Repository ID (e.g. meta-llama/Llama-2-7b) for hash verification.'
+    required: false
+  
+  ignore_malware:
+    description: 'If "true", does not fail the build on Malware/Integrity issues (exit code 0).'
+    required: false
+    default: 'false'
+    
+  ignore_license:
+    description: 'If "true", does not fail the build on License issues.'
+    required: false
+    default: 'false'
+  
+  full_scan:
+    description: 'If "true", scans entire datasets without sampling (slow).'
+    required: false
+    default: 'false'
+
+  output_format:
+    description: 'Output format: table, json, sarif, sbom.'
+    required: false
+    default: 'table'
+
+  hf_token:
+    description: 'Hugging Face Token for accessing gated models.'
+    required: false
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install Veritensor
+      shell: bash
+      run: |
+        pip install --upgrade pip
+        pip install "veritensor[all]"
+        python -m spacy download en_core_web_lg || echo "Spacy download skipped"
+
+    - name: Run Veritensor Scan
+      shell: bash
+      env:
+        VERITENSOR_HF_TOKEN: ${{ inputs.hf_token }}
+      run: |
+        CMD="veritensor scan ${{ inputs.path }} --jobs ${{ inputs.jobs }}"
+        
+        if [ "${{ inputs.repo }}" != "" ]; then
+          CMD="$CMD --repo ${{ inputs.repo }}"
+        fi
+        
+        if [ "${{ inputs.ignore_malware }}" == "true" ]; then
+          CMD="$CMD --ignore-malware"
+        fi
+        
+        if [ "${{ inputs.ignore_license }}" == "true" ]; then
+          CMD="$CMD --ignore-license"
+        fi
+
+        if [ "${{ inputs.full_scan }}" == "true" ]; then
+          CMD="$CMD --full-scan"
+        fi
+        
+        # Output formats
+        if [ "${{ inputs.output_format }}" == "json" ]; then
+          CMD="$CMD --json"
+        elif [ "${{ inputs.output_format }}" == "sarif" ]; then
+          CMD="$CMD --sarif"
+        elif [ "${{ inputs.output_format }}" == "sbom" ]; then
+          CMD="$CMD --sbom"
+        fi
+        
+        echo "Running: $CMD"
+        eval $CMD

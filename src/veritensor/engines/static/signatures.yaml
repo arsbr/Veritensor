@@ -1,0 +1,331 @@
+version: "2026.02.07"
+description: "Comprehensive security signatures (RCE, Cloud Theft, Exfiltration, MLOps abuse)"
+
+# --- 1. Unsafe Modules & Functions (Import Blocklist) ---
+unsafe_globals:
+  CRITICAL:
+    # --- Core Execution & Internals ---
+    __builtin__:
+      - eval
+      - compile
+      - apply
+      - exec
+      - breakpoint
+      - __import__
+    builtins:
+      - eval
+      - compile
+      - apply
+      - exec
+      - breakpoint
+      - __import__
+    runpy: "*"
+    os: "*"
+    nt: "*"       # Windows OS alias
+    posix: "*"    # Linux OS alias
+    subprocess: "*"
+    sys: "*"
+    ctypes: "*"
+    marshal: "*"  # Executing raw bytecode
+    pty: "*"
+    # --- Reverse Shells & Terminals ---
+   
+    tty: "*"
+    code: "*"     # code.InteractiveConsole
+    
+    # --- Serialization Bombs ---
+    pickle: "*"
+    _pickle: "*"
+
+    shelve: "*"
+    dbm: "*"
+    jsonpickle: "*"
+    yaml:
+      - load      # Unsafe YAML loading
+      - unsafe_load
+    ruamel.yaml: "*"
+    
+    # --- Low Level & C-Interface (Sandbox Escape) ---
+
+    _ctypes: "*"
+    cffi: "*"
+    dll: "*"
+    dlopen: "*"
+    CDLL: "*"
+    PyDLL: "*"
+    
+    # --- Dangerous Gadgets ---
+    operator:
+      - attrgetter # Used to chain calls: attrgetter("system")(os)("ls")
+    
+    # --- Debuggers (Can execute code) ---
+    bdb: "*"
+    pdb: "*"
+    ipdb: "*"
+    tracemalloc: "*"
+
+  HIGH:
+    # --- Network & Data Exfiltration ---
+    socket: "*"
+    ftplib: "*"
+    smtplib: "*"  # Sending spam/phishing
+    poplib: "*"
+    imaplib: "*"
+    
+    # --- HTTP Libraries (Calling home) ---
+    webbrowser: "*"
+    httplib: "*"
+    http: "*"
+    websocket: "*"
+    websocket_client: "*"
+    dnspython: "*" # DNS tunneling exfiltration
+    dns: "*"
+    
+    # --- Cloud SDKs (Credential Theft) ---
+    # Models should NEVER import these
+    
+    # --- SSH & Remote Access ---
+    paramiko: "*"
+    pysftp: "*"
+    fabric: "*"
+    
+    # --- Secrets & Environment Access ---
+    keyring: "*"
+    
+  MEDIUM: {}
+
+  LOW: {}
+
+# --- 2. Suspicious Strings (Heuristics) ---
+# These are checked against string constants found in the pickle stack.
+# Used to detect hardcoded paths to secrets or env vars.
+suspicious_strings:
+  - "/etc/passwd"
+  - "/etc/shadow"
+  - ".ssh/id_rsa"
+  - ".ssh/id_ed25519"
+  - ".ssh/id_ecdsa"
+  - ".ssh/id_dsa"
+  - ".ppk"
+  - "winscp.ini"   
+  - ".aws/credentials"
+  - ".aws/config"
+  - ".pypirc"       
+  - ".git-credentials"
+  
+  # CSS Hiding Techniques
+  - "regex:font-size:\\s*0px"
+  - "regex:font-size:\\s*1px"
+  - "regex:color:\\s*white"
+  - "regex:color:\\s*#ffffff"
+  - "regex:color:\\s*#fff"
+  - "regex:display:\\s*none"
+  - "regex:visibility:\\s*hidden"
+  - "regex:opacity:\\s*0"
+  - "regex:position:\\s*absolute;\\s*left:\\s*-9999px"
+  - "regex:z-index:\\s*-"
+  - "regex:position:\\s*absolute;\\s*left:\\s*-\\d+px"
+  - "regex:color:\\s*transparent"
+  - "regex:z-index:\\s*-\\d+"
+
+  # HTML Comments & Meta tags
+  - "regex:<!--.*ignore previous.*-->"
+  - "regex:<meta.*content=.*ignore previous.*>"
+  
+  # --- Cloud & API Keys (Specific Names) ---
+  - "AWS_ACCESS_KEY_ID"
+  - "AWS_SECRET_ACCESS_KEY"
+  - "OPENAI_API_KEY"
+  - "ANTHROPIC_API_KEY"
+  - "HF_TOKEN"
+  - "HUGGINGFACE_TOKEN"
+  - "SLACK_BOT_TOKEN"
+  
+  # --- Private Keys (Content Headers) ---
+  - "-----BEGIN OPENSSH PRIVATE KEY-----"
+  - "-----BEGIN RSA PRIVATE KEY-----"
+  - "-----BEGIN PRIVATE KEY-----"
+  - "-----BEGIN PGP PRIVATE KEY BLOCK-----"
+  - "regex:-----BEGIN [A-Z]+ PRIVATE KEY-----"
+  - "regex:(?i)(api_?key|auth_?token|access_?token|secret_?key|client_?secret|password|passwd)\\s*=\\s*['\"]([^'\"]+)['\"]"
+
+  # --- Network IOCs ---
+  - "169.254.169.254" # AWS Metadata IP
+  - "metadata.google.internal"
+  
+  
+  # --- High Entropy Tokens (Regex) ---
+  # Hugging Face (hf_ + 30+ chars)
+  - "regex:hf_[a-zA-Z0-9]{30,}"
+  # GitHub Personal Access Token (ghp_ + chars)
+  - "regex:ghp_[a-zA-Z0-9]{30,}"
+  # Slack Token (xoxb/xoxp)
+  - "regex:xox[baprs]-[a-zA-Z0-9]{10,}"
+  # Google API Key (AIza...)
+  - "regex:AIza[0-9A-Za-z-_]{35}"
+
+  # --- Malicious File Extensions in URLs (Data Poisoning) ---
+  - "regex:https?://\\S+\\.exe"
+  - "regex:https?://\\S+\\.sh"
+  - "regex:https?://\\S+\\.apk"
+  - "regex:https?://\\S+\\.bat"
+  - "regex:https?://\\S+\\.ps1"
+
+  
+  # Crypto Mining
+  - "regex:(?i)xmrig"
+  - "regex:(?i)ethminer"
+  - "regex:(?i)stratum\\+tcp"
+  - "regex:(?i)stratum\\+ssl"
+  - "regex:(?i)cpuminer"   
+  - "regex:(?i)minerd"        
+  - "regex:(?i)nanominer"
+  - "regex:(?i)(nicehash|nanopool|ethermine|dwarfpool|monerohash|supportxmr)\\.com"
+  - "regex:(?i)(f2pool|antpool|poolin)\\.com"
+
+  # Crypto
+# Monero (XMR)
+  - "regex:\\b4[0-9AB][1-9A-HJ-NP-Za-km-z]{93}\\b"
+
+# --- 3. RAG / Prompt Injections ---
+# Sources: JailbreakChat, OWASP LLM Top 10, Giskard
+prompt_injections:
+  # =================================================================
+  # DIRECT OVERRIDES
+  # =================================================================
+  - "regex:(?i)ignore\\s+(all\\s+)?(previous|prior|the)\\s+(instructions|directions|commands|prompts|context)"
+  - "regex:(?i)disregard\\s+(all\\s+)?(previous|prior)\\s+(instructions|directions)"
+  - "regex:(?i)(system|manual)\\s+override"
+  - "regex:(?i)delete\\s+(all\\s+)?(previous|prior)\\s+instructions"
+  
+  # =================================================================
+  # OUTPUT CONSTRAINTS
+  # =================================================================
+  - "regex:(?i)never\\s+(refuse|decline|say\\s+no|apologize)"
+  
+  # =================================================================
+  # JAILBREAKS & ROLEPLAY
+  # =================================================================
+  - "regex:(?i)you\\s+are\\s+(now\\s+)?(DAN|AIM|Mongo|developer\\s+mode|admin|root)"
+  - "regex:(?i)act\\s+as\\s+an?\\s+(unfiltered|evil|unrestricted|god|shadow|linux)"
+  - "regex:(?i)switch\\s+to\\s+(developer|unrestricted)\\s+mode"
+  - "regex:(?i)do\\s+anything\\s+now"
+  - "regex:(?i)enable\\s+(AI|system)\\s+mode"
+  
+  # =================================================================
+  # DATA EXFILTRATION 
+  # =================================================================
+  - "regex:(?i)repeat\\s+(the\\s+)?(text|sentences?|words?|everything)\\s+above"
+  - "regex:(?i)(output|print|reveal|show|dump)\\s+(everything|all|system\\s+prompt|initial\\s+instructions)"
+  # =================================================================
+
+  
+  # =================================================================
+  # DELIMITERS
+  # =================================================================
+  - "User: [System]"
+  - "--- END OF PROMPT ---"
+  - "[System Message]"
+  - "<|im_start|>"
+  - "<|im_end|>"
+
+  # =================================================================
+  # DATA EXFILTRATION / SECRETS / TOKENS
+  # =================================================================
+  - "regex:(?i)\\b(print|reveal|expose|show|dump|leak|output)\\b\\s+(all|everything|the\\s+system\\s+prompt|secrets|credentials)"
+  - "regex:(?i)pastebin|hastebin|gist\\.github|anonfiles|filebin|transfer\\.sh|we?bhook"
+
+  # =================================================================
+  # OUTPUT CONSTRAINTS / FORMATTING ATTACKS
+  # =================================================================
+  - "regex:(?i)\\b(answer\\s+only\\s+with|only\\s+respond\\s+with|start\\s+your\\s+answer\\s+with|end\\s+with)\\b"
+  - "regex:(?i)\\b(do\\s+not\\s+refuse|never\\s+say\\s+no|always\\s+answer)\\b"
+
+  # =================================================================
+  # ROLEPLAY / JAILBREAK VARIANTS (multilingual)
+  # =================================================================
+  - "regex:(?i)\\b(you\\s+are\\s+(now\\s+)?(DAN|AIM|developer\\s+mode|admin|root)|act\\s+as\\s+an?\\s+(unfiltered|unrestricted))\\b"
+  - "regex:(?i)\\b(ignore\\s+your\\s+instructions|disregard\\s+the\\s+system)\\b"
+  - "regex:(?i)играй\\s+роль|представь\\s+что\\s+ты|игнорируй\\s+предыдущие\\s+инструкции"    
+  - "regex:(?i)haz\\s+los\\s+que\\s+quieras|act[aá]\\s+como"                                
+
+  # =================================================================
+  # META / PROMPT-LEAK / SYSTEM PROMPT REQUESTS
+  # =================================================================
+  - "regex:(?i)(what\\s+are\\s+your\\s+(rules|instructions|commands|system\\s+prompt)|show\\s+the\\s+system\\s+prompt)"
+
+  # =================================================================
+  # PERSISTENCE / MEMORY / LATER ACTIONS
+  # =================================================================
+ 
+  - "regex:(?i)do\\s+not\\s+log|remove\\s+from\\s+history|forget\\s+previous"
+
+  # =================================================================
+  # AI & ML SERVICES 
+  # =================================================================
+  # Anthropic (Claude)
+  - "regex:sk-ant-api03-[a-zA-Z0-9_\\-]{93}AA"
+  # Cohere
+  - "regex:(?i)[\\w.-]{0,50}?(?:cohere|CO_API_KEY).*?([a-zA-Z0-9]{40})"
+  # OpenAI (Project & Service keys)
+  - "regex:sk-(?:proj|svcacct|admin)-[A-Za-z0-9_\\-]{40,}"
+  # Perplexity AI
+  - "regex:pplx-[a-zA-Z0-9]{48}"
+  # Hugging Face (Enhanced)
+  - "regex:(?:hf_|api_org_)[a-zA-Z0-9]{34}"
+  # Databricks (Big Data)
+  - "regex:dapi[a-f0-9]{32}"
+
+  # =================================================================
+  # CLOUD INFRASTRUCTURE (Critical)
+  # =================================================================
+  # Alibaba Cloud
+  - "regex:LTAI[a-z0-9]{20}"
+  # DigitalOcean
+  - "regex:dop_v1_[a-f0-9]{64}"
+  # Heroku API
+  - "regex:HRKU-AA[0-9a-zA-Z_-]{58}"
+  # Google Cloud / Firebase (AIza...)
+  - "regex:AIza[0-9A-Za-z\\-_]{35}"
+  # Azure AD Client Secret
+  - "regex:[a-zA-Z0-9_~.]{3}\\dQ~[a-zA-Z0-9_~.-]{31,34}"
+  
+  # =================================================================
+  # DEVELOPER TOOLS & SECRETS
+  # =================================================================
+  # GitHub PAT & OAuth
+  - "regex:(?:ghp|gho|ghu|ghs|ghr)_[0-9a-zA-Z]{36}"
+  # GitLab PAT
+  - "regex:glpat-[0-9a-zA-Z_\\-]{20}"
+  # PyPI Upload Token (Python Packages)
+  - "regex:pypi-AgEIcHlwaS5vcmc[\\w-]{50,}"
+  # NPM Access Token
+  - "regex:npm_[a-z0-9]{36}"
+  # HashiCorp Vault
+  - "regex:hvs\\.[a-z0-9]{24}"
+  # Ngrok (Tunneling)
+  - "regex:1[a-zA-Z0-9]{21,}"
+
+  # =================================================================
+  # MESSAGING & BOTS (Common in RAG/Agents)
+  # =================================================================
+  # Slack Bot Token
+  - "regex:xoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*"
+  # Slack User Token
+  - "regex:xoxp-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9-]*"
+  # Slack Webhook (Critical for Phishing)
+  - "regex:https://hooks.slack.com/services/T[a-zA-Z0-9_]{8}/B[a-zA-Z0-9_]{8}/[a-zA-Z0-9_]{24}"
+  # Telegram Bot Token
+  - "regex:[0-9]{9,10}:[a-zA-Z0-9_-]{35}"
+  # Discord Bot Token
+  - "regex:[a-zA-Z0-9]{24}\\.[a-zA-Z0-9]{6}\\.[a-zA-Z0-9_-]{27}"
+  # Discord Webhook
+  - "regex:https://discord.com/api/webhooks/[0-9]{18,19}/[a-zA-Z0-9_-]+"
+
+  # =================================================================
+  # GENERIC / HIGH ENTROPY FALLBACKS
+  # =================================================================
+  # Generic Private Key Headers
+  - "regex:-----BEGIN [A-Z ]+ PRIVATE KEY"
+  # Generic API Key assignment (Python style)
+  - "regex:(?i)(api_key|secret|token)\\s*=\\s*['\"][a-zA-Z0-9_\\-]{20,}['\"]"

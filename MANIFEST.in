@@ -1,0 +1,4 @@
+include README.md
+include LICENSE
+include veritensor.yaml
+recursive-include src/veritensor *.yaml

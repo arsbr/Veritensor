@@ -1,0 +1,2 @@
+[console_scripts]
+veritensor = veritensor.cli.main:app

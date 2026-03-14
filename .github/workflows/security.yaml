@@ -1,0 +1,44 @@
+name: Security Scan (Trivy)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '0 0 * * 0' # Run once a week (on Sunday), even if there are no commits
+
+jobs:
+  build:
+    name: Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 1. File scanning (Python dependencies)
+      - name: Run Trivy vulnerability scanner (Filesystem)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          hide-progress: false
+          format: 'table'
+          exit-code: '1' # Fail the build if holes are found
+          ignore-unfixed: true # Ignore vulnerabilities for which there are no patches.
+          severity: 'CRITICAL,HIGH'
+
+      # 2. Scanning a Docker image
+      - name: Build an image from Dockerfile
+        run: |
+          docker build -t veritensor:${{ github.sha }} .
+
+      - name: Run Trivy vulnerability scanner (Docker)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'image'
+          scan-ref: 'veritensor:${{ github.sha }}'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'

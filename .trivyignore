@@ -1,0 +1,10 @@
+# .trivyignore
+# Path Traversal in jaraco.context (vendored in setuptools).
+# Not exploitable in Veritensor CLI context as setuptools is a build dependency.
+GHSA-58pv-8j8x-9vj2
+CVE-2026-24049
+CVE-2025-61726
+CVE-2025-61728
+CVE-2025-61730
+CVE-2025-68121
+CVE-2026-24051
