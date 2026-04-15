@@ -34,7 +34,7 @@ Unlike standard SAST tools (which focus on code), Veritensor understands the bin
 *   **De-obfuscation Engine:** Automatically detects and decodes **Base64** strings to uncover hidden payloads (e.g., `SWdub3Jl...` -> `Ignore previous instructions`).
 *   **Magic Number Validation:** Detects malware masquerading as safe files (e.g., an `.exe` renamed to `invoice.pdf`).
 *   **Smart Filtering & Entropy Analysis:** Drastically reduces false positives in Jupyter Notebooks. Uses Shannon Entropy to find real, unknown API keys (WandB, Pinecone, Telegram) while ignoring safe UUIDs and standard imports.
-
+*   **CISO-Ready HTML Reports:** Generate beautiful, standalone HTML security reports with interactive charts and severity breakdowns using the `--html` flag.
 ---
 
 ## 📦 Installation
@@ -115,6 +115,12 @@ veritensor scan ./data/train.parquet --full-scan
 Check code cells, markdown, and saved outputs for threats:
 ```bash
 veritensor scan ./research/experiment.ipynb
+```
+
+### 10. Generate a CISO-Friendly HTML Report
+Create a standalone, interactive HTML dashboard of your scan results:
+```bash
+veritensor scan ./project --html
 ```
 
 **Example Output:**
@@ -238,17 +244,23 @@ with DAG('secure_rag_ingestion', start_date=datetime(2026, 1, 1)) as dag:
 
 Veritensor supports industry-standard formats for integration with security dashboards and audit tools.
 
-### 1. GitHub Security (SARIF)
+### 1. Interactive HTML Dashboard
+Generate a visually rich, standalone HTML report designed for CISOs and security audits. Includes severity breakdowns, charts, and easy copy-to-clipboard functionality for Jira tickets.
+```bash
+veritensor scan ./models --html
+```
+
+### 2. GitHub Security (SARIF)
 Generate a report compatible with GitHub Code Scanning:
 ```bash
 veritensor scan ./models --sarif > veritensor-report.sarif
 ```
-### 2. Software Bill of Materials (SBOM)
+### 3. Software Bill of Materials (SBOM)
 Generate a CycloneDX v1.5 SBOM to inventory your AI assets:
 ```bash
 veritensor scan ./models --sbom > sbom.json
 ```
-### 3. Raw JSON
+### 4. Raw JSON
 For custom parsers and SOAR automation:
 ```bash
 veritensor scan ./models --json
@@ -341,8 +353,8 @@ veritensor_audit:
 | **Datasets** | `.parquet`, `.csv`, `.tsv`, `.jsonl`, `.ndjson`, `.ldjson` | Streaming Regex Scan (URLs, Injections, PII) |
 | **Notebooks** | `.ipynb` | JSON Structure Analysis + Code AST + Markdown Phishing |
 | **Documents** | `.pdf`, `.docx`, `.pptx`, `.txt`, `.md`, `.html` | DOM Extraction, Stealth/CSS Detection, PII |
-| **Archives** | `.zip`, `.tar`, `.gz`, `.tgz`, `.whl` | Recursive In-Memory Inspection |
-| **RAG Docs** | `requirements.txt`, `poetry.lock`, `Pipfile.lock` | Typosquatting, OSV.dev CVE Lookup |
+| **Media & Archives** | `.png`, `.jpg`, `.zip`, `.tar`, `.gz`, `.whl` | EasyOCR, LSB Steganography, YARA (Enterprise) |
+| **Supply Chain** | `requirements.txt`, `pyproject.toml`, `poetry.lock`, `Pipfile.lock` | Typosquatting, OSV.dev CVE Lookup |
 
 ---
 
