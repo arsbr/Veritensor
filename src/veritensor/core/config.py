@@ -82,12 +82,13 @@ class ConfigLoader:
             private_key_path=config_data.get("private_key_path"),
             output_format=config_data.get("output_format", "table"),
             fail_on_missing_license=config_data.get("fail_on_missing_license", False),
-            custom_restricted_licenses=config_data.get("restricted_licenses", []),
+            custom_restricted_licenses=config_data.get("custom_restricted_licenses", []),
             allowed_models=config_data.get("allowed_models", []),
             report_url=config_data.get("report_url"),
             api_key=config_data.get("api_key")
         )
         return cls._instance
+
 
     @classmethod
     def get_safe_modules(cls) -> Set[str]:
