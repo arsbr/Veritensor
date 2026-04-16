@@ -1,5 +1,7 @@
 # 1. Build Cosign from source
 FROM golang:1.23-alpine AS cosign-builder
+RUN apk add --no-cache git
+ENV CGO_ENABLED=0
 RUN go install github.com/sigstore/cosign/v2/cmd/cosign@latest
 
 # 2. Main CLI Image
