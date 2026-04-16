@@ -6,6 +6,7 @@ import logging
 import json
 import datetime
 import platform
+from pathlib import Path
 from typing import List, Optional
 from veritensor.core.types import ScanResult
 from veritensor.core.config import VeritensorConfig
@@ -48,7 +49,7 @@ def send_report(
     # 2. Sanitize Results (Privacy Filter)
     for res in results:
         payload["results"].append({
-            "file_name": res.file_path.split("/")[-1], # Only filename, not full path (Privacy)
+            "file_name": Path(res.file_path).name,
             "file_hash": res.file_hash,
             "status": res.status,
             "threats": res.threats,
@@ -60,7 +61,7 @@ def send_report(
     # 3. Send Request
     headers = {
         "Content-Type": "application/json",
-        "User-Agent": "Veritensor-CLI/1.4.1"
+        "User-Agent": f"Veritensor-CLI/{__version__}"
     }
     if api_key:
         headers["X-API-Key"] = api_key
