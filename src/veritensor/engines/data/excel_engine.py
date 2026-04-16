@@ -12,6 +12,7 @@ from veritensor.core.text_utils import normalize_text
 logger = logging.getLogger(__name__)
 
 try:
+    import defusedxml
     import openpyxl
     EXCEL_AVAILABLE = True
 except ImportError:
