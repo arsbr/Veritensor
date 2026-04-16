@@ -1,7 +1,9 @@
-# Stage 1: Base Image
-FROM python:3.11-slim-bookworm
+# 1. Build Cosign from source
 FROM golang:1.23-alpine AS cosign-builder
 RUN go install github.com/sigstore/cosign/v2/cmd/cosign@latest
+
+# 2. Main CLI Image
+FROM python:3.11-slim-bookworm
 
 # Install system dependencies
 RUN apt-get update && apt-get upgrade -y && \
