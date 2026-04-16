@@ -145,8 +145,25 @@ def _clean_magics(source: str) -> str:
             lines.append(line)
     return "\n".join(lines)
 
+def _check_nesting_level(code: str, max_depth: int = 100) -> bool:
+    # Protection against AST Bomb (Stack Overflow)
+    depth = 0
+    for char in code:
+        if char in "([{":
+            depth += 1
+            if depth > max_depth:
+                return False
+        elif char in ")]}":
+            depth -= 1
+    return True
+
+
 def _scan_ast(code: str, cell_num: int) -> List[str]:
     threats = []
+    
+    if not _check_nesting_level(code):
+        return[f"CRITICAL: AST Bomb detected (excessive nesting) in cell {cell_num}"]
+    
     try:
         tree = ast.parse(code)
         
