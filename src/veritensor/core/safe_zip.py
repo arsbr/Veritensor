@@ -10,7 +10,8 @@ class ZipBombError(Exception):
 class SafeZipReader:
     # Limits: 2 GB decompressed, compression ratio 100x
     MAX_UNZIPPED_SIZE = 2 * 1024 * 1024 * 1024 
-    MAX_RATIO = 100 
+    MAX_RATIO = 10
+    MIN_SIZE_FOR_RATIO = 10 * 1024 * 1024 
 
     @staticmethod
     def validate(zfile: zipfile.ZipFile):
@@ -24,7 +25,8 @@ class SafeZipReader:
                 raise ZipBombError(f"Filename too long in zip: {info.filename[:50]}...")
 
             # Checking the compression ratio
-            if info.file_size > 0 and info.compress_size > 0:
+            #if info.file_size > 0 and info.compress_size > 0:
+            if info.file_size > SafeZipReader.MIN_SIZE_FOR_RATIO and info.compress_size > 0:
                 ratio = info.file_size / info.compress_size
                 if ratio > SafeZipReader.MAX_RATIO:
                     raise ZipBombError(f"Zip Bomb detected! Ratio {ratio:.1f}x exceeds limit.")
@@ -33,4 +35,10 @@ class SafeZipReader:
         
         # Checking the total size
         if total_size > SafeZipReader.MAX_UNZIPPED_SIZE:
-             raise ZipBombError(f"Zip Bomb detected! Total unzipped size {total_size} bytes exceeds limit.")
+            raise ZipBombError(f"Zip Bomb detected! Total unzipped size {total_size} bytes exceeds limit.")
+
+    def read(self, zfile: zipfile.ZipFile, name: str) -> bytes:
+        info = zfile.getinfo(name)
+        if info.file_size > self.MAX_UNZIPPED_SIZE:
+            raise ZipBombError(f"File {name} is too large")
+        return zfile.read(name)
