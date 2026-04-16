@@ -1,17 +1,17 @@
 # Stage 1: Base Image
 FROM python:3.11-slim-bookworm
+FROM golang:1.23-alpine AS cosign-builder
+RUN go install github.com/sigstore/cosign/v2/cmd/cosign@latest
 
 # Install system dependencies
 RUN apt-get update && apt-get upgrade -y && \
     apt-get install -y curl git && \
+    apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 # --- Install Cosign (Sigstore) ---
-ENV COSIGN_VERSION="v2.4.0" 
+COPY --from=cosign-builder /go/bin/cosign /usr/local/bin/cosign
 
-RUN curl -O -L "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64" && \
-    mv cosign-linux-amd64 /usr/local/bin/cosign && \
-    chmod +x /usr/local/bin/cosign
 # --- Install Veritensor ---
 WORKDIR /app
 
