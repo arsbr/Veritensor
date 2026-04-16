@@ -135,18 +135,22 @@ class GGUFReader(ModelReader):
                 metadata = {}
                 
                 # 4. Parse Key-Value Pairs
-                for _ in range(kv_count):
-                    key = self._read_string(f)
-                    val_type = struct.unpack('<I', f.read(4))[0]
-                    value = self._read_value(f, val_type)
-                    
-                    # Store interesting metadata
-                    if isinstance(key, str):
-                        # We are interested in general info, licenses, authors
-                        if key.startswith("general."):
-                            clean_key = key.replace("general.", "")
-                            metadata[clean_key] = value
+                try:
+                    for _ in range(kv_count):
+                        key = self._read_string(f)
+                        val_type = struct.unpack('<I', f.read(4))[0]
+                        value = self._read_value(f, val_type)
+                        
+                        # Store interesting metadata
+                        if isinstance(key, str):
+                            if key.startswith("general."):
+                                clean_key = key.replace("general.", "")
+                                metadata[clean_key] = value
+                except ValueError as e:
+                    # Catch the error of parsing a specific value, but do not interrupt the entire method
+                    logger.warning(f"GGUF parse stopped early for {file_path}: {e}")
 
+                # Return what we managed to collect (even if the cycle was interrupted by an error)
                 return {
                     "format": "gguf",
                     "version": version,
@@ -155,6 +159,7 @@ class GGUFReader(ModelReader):
                 }
 
         except Exception as e:
+            # Catch critical errors (for example, the file is not found or the header is not readable)
             logger.error(f"Failed to read GGUF {file_path}: {e}")
             return {"error": str(e)}
 
@@ -198,8 +203,8 @@ class GGUFReader(ModelReader):
                 values.append(self._read_value(f, item_type))
             return values
         else:
-            # Unknown type, we might lose sync here if we don't know size
-            return "UNKNOWN_TYPE"
+            raise ValueError(f"Unknown GGUF value type: {val_type}. Cannot determine byte size, stopping parse.")
+
 
 
 def get_reader_for_file(file_path: Path) -> Optional[ModelReader]:
