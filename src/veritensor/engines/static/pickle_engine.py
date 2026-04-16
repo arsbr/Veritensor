@@ -143,12 +143,17 @@ def scan_pickle_stream(data: Union[bytes, BinaryIO], strict_mode: bool = True) -
             pass
 
     MAX_MEMO_SIZE = 2048 
-    memo = [] 
+    MAX_INSTRUCTIONS = 5_000_000  # Instruction limit
+    memo =[] 
+    instruction_count = 0 
 
     try:
         # pickletools.genops reads from the stream incrementally
         for opcode, arg, pos in pickletools.genops(stream):
-            
+            instruction_count += 1
+            if instruction_count > MAX_INSTRUCTIONS:
+                threats.append("CRITICAL: Pickle instruction limit exceeded (DoS protection)")
+                break
             if opcode.name in ("SHORT_BINUNICODE", "UNICODE", "BINUNICODE"):
                 memo.append(arg)
                 if len(memo) > MAX_MEMO_SIZE: 
