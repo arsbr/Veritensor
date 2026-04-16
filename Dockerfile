@@ -1,30 +1,23 @@
 # ==========================================
 # STAGE 1: Builder (Компилируем чистый Cosign)
 # ==========================================
-# Используем свежий Go 1.26 на базе Debian (Bookworm), чтобы избежать CVE и ошибок Alpine
 FROM golang:1.26-bookworm AS cosign-builder
 
-# Отключаем CGO для создания статичного бинарника и ограничиваем потоки, чтобы не убить CI/CD по памяти
 ENV CGO_ENABLED=0
 ENV GOMAXPROCS=2
 
-# Компилируем Cosign из исходников. 
-# Так как мы используем Go 1.26, в бинарнике НЕ БУДЕТ старых уязвимостей!
 RUN go install github.com/sigstore/cosign/v2/cmd/cosign@latest
-
 
 # ==========================================
 # STAGE 2: Main CLI Image
 # ==========================================
 FROM python:3.11-slim-bookworm
 
-# Устанавливаем системные зависимости
 # (curl и git больше не нужны, так как мы не качаем Cosign из интернета!)
 RUN apt-get update && apt-get upgrade -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Копируем свежесобранный, безопасный бинарник Cosign из первой стадии
 COPY --from=cosign-builder /go/bin/cosign /usr/local/bin/cosign
 
 # --- Install Veritensor ---
