@@ -195,15 +195,30 @@ def _parse_requirements(path: Path) -> Dict[str, Optional[str]]:
         content = _safe_read_text(path) 
         for line in content.splitlines():
             line = line.strip()
-            if not line or line.startswith(("#", "-", "git+", "http")): continue
+            if not line or line.startswith(("#", "-")): 
+                continue
             
-            # Split by version operators or environment markers
+            # Processing direct links (git+, http) with #egg=
+            if "egg=" in line:
+                # Пример: git+https://github.com/user/repo.git#egg=evil_pkg
+                name_part = line.split("egg=")[-1].split("&")[0].strip()
+                deps[name_part] = None
+                continue
+
+            # Syntax processing of PEP-508 (pkg @ https://...)
+            if " @ " in line:
+                name_part = line.split(" @ ")[0].strip()
+                deps[name_part] = None
+                continue
+            
+            # Standard parsing
             name_part = re.split(r'[=<>~! ;\[]', line)[0].strip()
             version_match = re.search(r'==([0-9a-zA-Z.-]+)', line)
             deps[name_part] = version_match.group(1) if version_match else None
     except Exception:
         pass
     return deps
+
 
 def _parse_pyproject(path: Path) -> Dict[str, Optional[str]]:
     deps = {}
