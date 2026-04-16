@@ -80,33 +80,42 @@ def scan_dataset(file_path: Path, full_scan: bool = False) -> List[str]:
         row_count = 0
         pii_buffer = [] 
         
-        for text_chunk in text_stream:
-            if not text_chunk: continue
-            
-            # ReDoS protection
-            scan_text = text_chunk if len(text_chunk) <= 4096 else text_chunk[:4096]
+        ## Use Set to store unique threats so as not to spam with duplicates
+        unique_threats = set()
 
-            # A. Prompt Injection (Fail Fast)
+        for text_chunk in text_stream:
+            row_count += 1
+            if row_limit and row_count >= row_limit:
+                break
+                
+            if not text_chunk or len(text_chunk) < 5:
+                continue
+            
+            if len(text_chunk) > 4096:
+                text_chunk = text_chunk[:4096]
+
+            # A. Prompt Injection (DatA Poisoning)
             for pat in injections:
-                if is_match(scan_text, [pat]):
-                    threats.append(f"HIGH: Data Poisoning (Injection) detected in {file_path.name}: '{pat}'")
-                    return threats 
+                if is_match(text_chunk, [pat]):
+                    unique_threats.add(f"HIGH: Data Poisoning (Injection) detected in {file_path.name}: '{pat}'")
 
             # B. Malicious URLs / Secrets (Regex)
             for pat in suspicious:
-                if is_match(scan_text, [pat]):
-                    label = "Malicious URL" if "http" in pat or "://" in pat else "Secret/PII"
-                    threats.append(f"MEDIUM: {label} detected in dataset {file_path.name}: '{pat}'")
+                if is_match(text_chunk, [pat]):
+                    label = "Malicious URL" if "http" in pat else "Secret/PII Pattern"
+                    unique_threats.add(f"MEDIUM: {label} detected in dataset {file_path.name}: '{pat}'")
             
             # C. Collect PII Sample 
             if len(pii_buffer) < 50:
-                pii_buffer.append(scan_text)
+                pii_buffer.append(text_chunk)
 
-            row_count += 1
             # Check limit here (Centralized control)
             if row_limit and row_count >= row_limit:
                 break
-        
+                
+        # Moving unique threats to the main list
+        threats.extend(list(unique_threats))
+
         # 5. Run PII Scan on Sample
         if pii_buffer:
             combined_sample = "\n".join(pii_buffer)
@@ -141,33 +150,64 @@ def _stream_parquet(path: Path) -> Generator[str, None, None]:
             # Convert row to single string
             text_values = " ".join(row.dropna().astype(str).tolist())
             yield text_values
-
+'''
+def _read_csv_with_pandas(path: Path, sep: str):
+    import pandas as pd
+    try:
+        try:
+            chunks = pd.read_csv(
+                path, sep=sep, chunksize=CHUNK_SIZE,
+                encoding="utf-8", on_bad_lines="skip", low_memory=True
+            )
+        except TypeError:
+            chunks = pd.read_csv(
+                path, sep=sep, chunksize=CHUNK_SIZE,
+                encoding="utf-8", error_bad_lines=False, low_memory=True
+            )
+        results = []
+        for chunk in chunks:
+            text_df = chunk.select_dtypes(include=['object'])
+            for _, row in text_df.iterrows():
+                results.append(" ".join(row.dropna().astype(str).tolist()))
+        return results
+    except Exception as e:
+        raise RuntimeError(f"pandas failed to read csv: {e}") from e
+        '''
 def _stream_csv(path: Path) -> Generator[str, None, None]:
     ext = path.suffix.lower()
     sep = "\t" if ext == ".tsv" else ","
-    
+
     try:
         import pandas as pd
-        # Read in chunks without limit (limit handled by caller)
-        chunks = pd.read_csv(
-            path, sep=sep, chunksize=CHUNK_SIZE, 
-            encoding="utf-8", on_bad_lines="skip", low_memory=True
-        )
-        
+        try:
+            chunks = pd.read_csv(
+                path, sep=sep, chunksize=CHUNK_SIZE,
+                encoding="utf-8", on_bad_lines="skip", low_memory=True
+            )
+        except TypeError:
+            # Fallback for older versions of pandas
+            chunks = pd.read_csv(
+                path, sep=sep, chunksize=CHUNK_SIZE,
+                encoding="utf-8", error_bad_lines=False, low_memory=True
+            )
+            
         for chunk in chunks:
-            # Select object (string) columns only
             text_df = chunk.select_dtypes(include=['object'])
             for _, row in text_df.iterrows():
-                text_val = " ".join(row.dropna().astype(str).tolist())
-                yield text_val
+                yield " ".join(row.dropna().astype(str).tolist())
+        return
+    except Exception as e:
+        logger.warning(f"pandas failed for {path.name}, using stdlib: {e}")
 
-    except ImportError:
-        # Fallback to stdlib
-        csv.field_size_limit(min(sys.maxsize, 2147483647))
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            reader = csv.reader(f, delimiter=sep)
-            for row in reader:
-                yield " ".join(row)
+    # stdlib fallback
+    import csv
+    import sys
+    csv.field_size_limit(min(sys.maxsize, 2147483647))
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        reader = csv.reader(f, delimiter=sep)
+        for row in reader:
+            yield " ".join(row)
+
                 
 def _stream_jsonl(path: Path) -> Generator[str, None, None]:
     """Reads JSONL safely."""
