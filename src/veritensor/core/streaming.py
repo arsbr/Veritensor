@@ -6,7 +6,7 @@ import requests
 import logging
 from urllib.parse import urlparse
 from typing import Optional, List, Any
-from veritensor.core.networking import validate_url_safety
+from veritensor.core.networking import safe_dns_resolve
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,6 @@ class RemoteStream(io.IOBase):
     """
     def __init__(self, url: str, session: Optional[requests.Session] = None):
         self._validate_url(url)
-        validate_url_safety(url) # SSRF Protection
         self.url = url
         self.session = session or requests.Session()
         self.pos = 0
@@ -53,8 +52,9 @@ class RemoteStream(io.IOBase):
     def _fetch_size(self) -> int:
         try:
             headers = {"Range": "bytes=0-0"}
-            resp = self.session.get(self.url, headers=headers, stream=True, timeout=10)
-            resp.raise_for_status()
+            with safe_dns_resolve(self.url):
+                resp = self.session.get(self.url, headers=headers, stream=True, timeout=10)
+                resp.raise_for_status()
             
             content_range = resp.headers.get("Content-Range")
             if content_range and "/" in content_range:
@@ -81,8 +81,9 @@ class RemoteStream(io.IOBase):
 
         headers = {"Range": f"bytes={self.pos}-{end}"}
         try:
-            resp = self.session.get(self.url, headers=headers, timeout=30)
-            resp.raise_for_status()
+            with safe_dns_resolve(self.url):
+                resp = self.session.get(self.url, headers=headers, timeout=30)
+                resp.raise_for_status()
             data = resp.content
             self.pos += len(data)
             return data
