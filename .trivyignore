@@ -1,3 +1,16 @@
 # .trivyignore
 # Path Traversal in jaraco.context (vendored in setuptools).
 # Not exploitable in Veritensor CLI context as setuptools is a build dependency.
+
+# False Positive: Vulnerability only affects Docker CLI on Windows. Our container is Linux-based.
+CVE-2025-15558
+
+# Not Exploitable: gRPC authorization bypass affects servers. Cosign acts only as a gRPC client.
+CVE-2026-33186
+
+# Not Exploitable: PATH hijacking requires existing shell access to modify environment variables.
+CVE-2026-24051
+CVE-2026-39883
+
+# Accepted Risk: DoS via crafted JWE. Cosign only processes our own trusted signatures in CI/CD.
+CVE-2026-34986
