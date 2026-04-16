@@ -36,16 +36,18 @@ from veritensor.engines.content.injection import scan_document, TEXT_EXTENSIONS,
 from veritensor.engines.static.notebook_engine import scan_notebook
 from veritensor.engines.data.dataset_engine import scan_dataset
 from veritensor.engines.static.dependency_engine import scan_dependencies
-from veritensor.engines.data.excel_engine import scan_excel # <--- NEW
-from veritensor.engines.container.archive_engine import scan_archive # <--- NEW
+from veritensor.engines.data.excel_engine import scan_excel 
+from veritensor.engines.container.archive_engine import scan_archive # 
 
 # Reporting
 from veritensor.reporting.telemetry import send_report
 from veritensor.reporting.sarif import generate_sarif_report
 from veritensor.reporting.sbom import generate_sbom
-from veritensor.reporting.manifest import generate_manifest # <--- NEW
+from veritensor.reporting.manifest import generate_manifest
+from veritensor.reporting.html_report import generate_html_report
 
 from veritensor.integrations.enterprise_scanner import EnterpriseScanner
+from veritensor.engines.static.mcp_scanner import scan_mcp_server
 
 # Robust import for rules
 try:
@@ -72,8 +74,8 @@ PICKLE_EXTS = {".pt", ".pth", ".bin", ".pkl", ".ckpt", ".whl"}
 KERAS_EXTS = {".h5", ".keras"}
 NOTEBOOK_EXTS = {".ipynb"}
 DATASET_EXTS = {".parquet", ".csv", ".jsonl", ".tsv", ".ndjson"}
-EXCEL_EXTS = {".xlsx", ".xlsm", ".xltx"} # <--- NEW
-ARCHIVE_EXTS = {".zip", ".tar", ".gz", ".tgz"} # <--- NEW
+EXCEL_EXTS = {".xlsx", ".xlsm", ".xltx"} 
+ARCHIVE_EXTS = {".zip", ".tar", ".gz", ".tgz", ".tar.gz"}
 DEP_FILES = {"requirements.txt", "pyproject.toml", "Pipfile", "poetry.lock", "Pipfile.lock"}
 ALL_DOC_EXTS = TEXT_EXTENSIONS.union(DOC_EXTS)
 CODE_EXTS = {".py",".js",".ts",".java",".c",".cpp",".cs",".go",".rs",".php",".rb",".swift",".kt",".m",".scala",".dart",".r",".jl",".hs",".clj",".ex",".exs",
@@ -89,6 +91,40 @@ NOISE_PATTERNS = [
     "Metadata parse error", "Suspicious script/XSS", "Suspicious link"
 ]
 
+# Formats that we want to check on the server (OCR, YARA, Macros)
+HEAVY_EXTS = {
+            # --- Images & Media (OCR, Steganography) ---
+            ".png", ".jpg", ".jpeg", ".tiff", ".bmp",
+
+            # --- Office & Documents (Macros, PDF parsing, RAG Security) ---
+            ".pdf", ".docx", ".pptx", ".xlsx", ".xlsm", ".xltx", ".docm",
+
+            # --- Archives (YARA, Zip Bomb protection) ---
+            ".zip", ".tar", ".gz", ".tgz", ".whl",
+
+            # --- AI Notebooks (AST, Secrets, Outputs) ---
+            ".ipynb",
+
+            # --- Datasets (Сэмплируются перед отправкой!) ---
+            ".parquet", ".csv", ".tsv", ".jsonl", ".ndjson",
+
+            # --- Text & Markup (DeBERTa Semantic Scan, GLiNER) ---
+            ".txt", ".md", ".markdown", ".rst", ".adoc", ".asciidoc",
+            ".tex", ".org", ".wiki", ".html", ".htm",
+
+            # --- Data & Configs (Secrets, PII) ---
+            ".json", ".xml", ".yaml", ".yml", ".toml", 
+            ".ini", ".cfg", ".conf", ".env", ".properties",
+
+            # --- Infrastructure & Logs (High risk of PII and Secret leaks) ---
+            ".tf", ".tfvars", ".k8s", ".helm", ".tpl",
+            ".log", ".out", ".err"
+        }
+
+        # Specific files that are sent to the server (name verification)
+HEAVY_FILES = {"dockerfile"}
+
+
 def load_ignore_patterns(ignore_file: str = ".veritensorignore") -> List[str]:
     """Loads glob patterns from .veritensorignore file."""
     patterns = []
@@ -102,11 +138,14 @@ def load_ignore_patterns(ignore_file: str = ".veritensorignore") -> List[str]:
     return patterns
 
 def is_ignored(file_path: Path, ignore_patterns: List[str]) -> bool:
-    # Checks if a file matches any of the ignore patterns (supports directory matching)
+    path_str = str(file_path)
     for pattern in ignore_patterns:
-        if file_path.match(pattern) or file_path.name == pattern:
+        if fnmatch.fnmatch(file_path.name, pattern):
             return True
-        if any(p.match(pattern) or p.name == pattern for p in file_path.parents):
+        if fnmatch.fnmatch(path_str, f"*/{pattern}") or fnmatch.fnmatch(path_str, f"*/{pattern}/*"):
+            return True
+        # Direct comparison with a part of the path
+        if any(part == pattern for part in file_path.parts):
             return True
     return False
 
@@ -122,7 +161,7 @@ def check_remote_cache(report_url: str, api_key: str, hashes: List[str], version
     
     cache_url = report_url.replace("/telemetry", "/cache/check")
     headers = {"X-API-Key": api_key}
-    payload = {"hashes": hashes, "scanner_version": __version__} # Added a version to the payload
+    payload = {"hashes": hashes, "scanner_version": version} # Added a version to the payload
     
     try:
         response = requests.post(cache_url, headers=headers, json=payload, timeout=5)
@@ -169,22 +208,19 @@ def check_severity(threats: List[str], threshold: str) -> bool:
     return False
 
 # --- WORKER FUNCTION ---
-def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bool]) -> ScanResult:
+def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bool, Optional[str]]) -> ScanResult:
     file_path_str, config, repo, ignore_license, full_scan_dataset, is_s3, precalc_hash = args
 
     if is_s3:
         file_name = file_path_str.split("/")[-1]
-        # Using Path to extract ALL suffixes (e.g. .tar.gz )
-        ext = "".join(Path(file_name).suffixes).lower()
-        if not ext: 
-            ext = Path(file_name).suffix.lower()
         file_path = None 
     else:
         file_path = Path(file_path_str)
         file_name = file_path.name
-        ext = "".join(file_path.suffixes).lower()
-        if not ext: 
-            ext = file_path.suffix.lower()
+    # Take the full extension (for example, .tar.gz ) and fallback to normal    
+    ext = "".join(Path(file_name).suffixes).lower()
+    if ext not in ARCHIVE_EXTS and ext not in DATASET_EXTS:
+        ext = Path(file_name).suffix.lower()
     
     filename_lower = file_name.lower()
     scan_res = ScanResult(file_path=file_path_str)
@@ -193,20 +229,18 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
     # --- HYBRID ROUTING (Sending heavy files to the server) ---
     # If the user has an Enterprise server connected
     if config.report_url and config.api_key and not is_s3 and file_path:
-        # Formats that we want to check on the server (OCR, YARA, Macros)
-        HEAVY_EXTS = {'.png', '.jpg', '.jpeg', '.xlsm', '.docm', '.pdf'}
         
-        if ext in HEAVY_EXTS:
+        
+        # Check if the extension OR the exact file name matches (in lowercase)
+        if ext in HEAVY_EXTS or filename_lower in HEAVY_FILES:
             try:
                 scanner = EnterpriseScanner(config.report_url, config.api_key)
-                remote_threats = scanner.scan_file_remotely(file_path)
+                remote_threats = scanner.scan_file_remotely(file_path, full_scan=full_scan_dataset)
                 
                 if remote_threats:
                     for t in remote_threats: scan_res.add_threat(t)
                     
-                # If the file is checked on the server, we can skip the local checks.,
-                # to avoid doing double work (especially for PDF).
-                # We return the result immediately.
+                # Файл проверен на сервере (ML, OCR, YARA), пропускаем локальные проверки
                 return scan_res
             except Exception as e:
                 scan_res.add_threat(f"WARNING: Remote scan failed, falling back to local: {e}")
@@ -279,7 +313,11 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
                     threats = scan_archive(file_path)
                     for t in threats: scan_res.add_threat(t)
         elif ext in CODE_EXTS:
-            pass
+            if ext == ".py" and file_path:
+                mcp_result = scan_mcp_server(file_path)
+                if mcp_result.mcp_tools_found:
+                    for t in mcp_result.to_threat_strings():
+                        scan_res.add_threat(t)
 
         else:
             # If the format is unknown to any engine at all.
@@ -358,7 +396,6 @@ def _run_scan_process(
 
     # 2. Prepare Tasks & Remote Cache Check
     tasks = []
-    files_to_hash =[]
     
     # First, we quickly calculate the hashes locally (using SQLite so as not to read the files again)
     local_hashes_map = {} # {filepath: hash}
@@ -389,7 +426,7 @@ def _run_scan_process(
     for f in files_to_scan:
         is_s3 = str(f).startswith("s3://")
         if is_s3:
-            tasks.append((str(f), config, repo, ignore_license, full_scan, True))
+            tasks.append((str(f), config, repo, ignore_license, full_scan, True, None))
             continue
             
         file_hash = local_hashes_map.get(str(f))
@@ -438,7 +475,8 @@ def _run_scan_process(
                     results.append(err_res)
                 progress.advance(main_task)
     finally:
-        if executor: executor.shutdown(wait=True)
+        if executor is not None:
+            executor.shutdown(wait=False, cancel_futures=True)
         hash_cache.close()
         
     return results
@@ -458,25 +496,26 @@ def scan(
     report_to: Optional[str] = typer.Option(None, help="URL to send scan report (Enterprise)"),
     api_key: Optional[str] = typer.Option(None, envvar="VERITENSOR_API_KEY", help="API Key for reporting"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed logs"),
+    html_output: bool = typer.Option(False, "--html", help="Generate a beautiful HTML report"),
+    output_file: Optional[str] = typer.Option(None, "--output-file", "-o", help="Save machine-readable output (JSON/SARIF/SBOM) to a file instead of stdout"),
 ):
     """
     Scans models, data, and code for security threats.
     """
     config = ConfigLoader.load()
     if verbose: logger.setLevel(logging.DEBUG)
-    is_machine_output = json_output or sarif_output or sbom_output
+    is_machine_output = (json_output or sarif_output or sbom_output) and not output_file
 
-    # Прокидываем флаги из консоли в глобальный объект config
+    # Passing the flags from the console to the global config object
     config.report_url = report_to or config.report_url
     config.api_key = api_key or config.api_key
     
     # --- CENTRALIZED POLICY SYNC ---
     server_suppressions =[]
-    if report_to and api_key:
+    if config.report_url and config.api_key:
         if not is_machine_output:
             console.print("[dim]🔄 Syncing policies from Veritensor Control Plane...[/dim]")
-        
-        server_config_dict, server_suppressions = fetch_server_policies(report_to, api_key)
+        server_config_dict, server_suppressions = fetch_server_policies(config.report_url, config.api_key)
         
         # If the server has returned the config, we overwrite the local settings.
         if server_config_dict:
@@ -531,20 +570,44 @@ def scan(
                     clean_res = ScanResult(res.file_path, status="PASS")
                     filtered_results.append(clean_res)
             else:
-                # Оставляем только реальные угрозы для вывода
+                # Leave only real threats for withdrawal
                 res.threats = real_threats
                 filtered_results.append(res)
         else:
             filtered_results.append(res)
 
-    if sarif_output: print(generate_sarif_report(results))
-    elif sbom_output: print(generate_sbom(results))
+    if html_output:
+        report_path = generate_html_report(filtered_results)
+        if not is_machine_output:
+            console.print(f"\n[bold green]✅ HTML Report saved to: {report_path}[/bold green]")        
+
+    machine_text = None        
+    if sarif_output:
+        machine_text = generate_sarif_report(results)
+    elif sbom_output:
+        machine_text = generate_sbom(results)
     elif json_output:
-        results_dicts =[r.__dict__ for r in results]
-        print(json.dumps(results_dicts, indent=2))
+        results_dicts = [r.__dict__ for r in results]
+        machine_text = json.dumps(results_dicts, indent=2)
+
+
+    if machine_text:
+        if output_file:
+
+            with open(output_file, "w", encoding="utf-8") as f:
+                f.write(machine_text)
+            if not is_machine_output:
+                console.print(f"[bold green]✅ Report saved to: {output_file}[/bold green]")
+
+            _print_table(filtered_results)
+
+        else:
+            print(machine_text)
     else:
         _print_table(filtered_results)
 
+
+    # Telemetry
     if report_to or config.report_url:
         if not is_machine_output: console.print(f"[dim]📡 Sending telemetry...[/dim]")
         send_report(results, config, override_url=report_to, override_key=api_key)
