@@ -19,7 +19,7 @@ class ScanResult:
     identity_verified: bool = False
     detected_license: Optional[str] = None
     repo_id: Optional[str] = None
-    
+    file_format: Optional[str] = None
     def add_threat(self, message: str):
         self.threats.append(message)
         self.status = "FAIL"
