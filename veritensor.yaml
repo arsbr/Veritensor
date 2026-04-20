@@ -5,8 +5,8 @@
 
 # Minimum severity level to fail the build (Exit Code 1).
 # Options: CRITICAL, HIGH, MEDIUM, LOW
-# Default: CRITICAL (Blocks Remote Code Execution and Malware)
-fail_on_severity: "CRITICAL"
+# Default: HIGH (Blocks Remote Code Execution and Malware)
+fail_on_severity: "HIGH"
 
 # Output format for logs.
 # Options: table (for humans), json (for scripts), sarif (for GitHub Security)
@@ -31,15 +31,7 @@ custom_restricted_licenses:
 # List of repositories that are trusted regardless of their license.
 # Useful for internal models or specific approved external models.
 # Supports "regex:" or "pattern:" prefix for advanced matching.
-allowed_models:
-  # Simple substring match (allows specific model)
-  - 'google-bert/bert-base-uncased'
-  
-  # Regex match: Allow ALL models from "meta-llama" organization
-  - 'regex:^meta-llama/.*'
-  
-  # Regex match: Allow specific version pattern (e.g., v1.0 to v1.9)
-  - 'pattern:my-org/internal-model-v1\.[0-9]'
+allowed_models: []  
   
 # --- Security Policies (Pickle/PyTorch) ---
 
@@ -57,7 +49,7 @@ allowed_modules:
 
 # Specific threats to ignore. Use with caution!
 # Format matches the output string: "SEVERITY: module.function"
-ignored_rules:
+ignored_rules: []
   # Example: Allow checking if a file exists (usually safe)
   # - "CRITICAL: os.path.exists"
   
