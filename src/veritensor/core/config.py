@@ -8,12 +8,13 @@
 
 import os
 import logging
-import yaml # Now a hard dependency
+import yaml 
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Optional, Set
+from veritensor import __version__
 
-VERSION = "1.6.3"
+VERSION = __version__
 logger = logging.getLogger(__name__)
 DEFAULT_CONFIG_PATH = Path("veritensor.yaml")
 
@@ -21,7 +22,7 @@ DEFAULT_CONFIG_PATH = Path("veritensor.yaml")
 class VeritensorConfig:
     allowed_modules: List[str] = field(default_factory=list)
     ignored_rules: List[str] = field(default_factory=list)
-    fail_on_severity: str = "CRITICAL"
+    fail_on_severity: str = "CRITICAL" 
     hf_token: Optional[str] = None
     private_key_path: Optional[str] = None
     output_format: str = "table"
