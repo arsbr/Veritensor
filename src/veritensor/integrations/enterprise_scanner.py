@@ -1,6 +1,6 @@
 # Copyright 2026 Veritensor Security
 # Enterprise Scanner Integration: Offloads heavy files to the Veritensor Control Plane.
-
+import sys
 import requests
 import time
 import logging
@@ -89,9 +89,10 @@ class EnterpriseScanner:
             scan_req.raise_for_status()
             task_id = scan_req.json()["task_id"]
 
-            # Polling with timeout prompt
+            POLL_INTERVAL_SECONDS = 6
+            MAX_WAIT_SECONDS = int(os.getenv("VERITENSOR_SCAN_TIMEOUT", "600"))  # 10 min default, configurable
+
             elapsed = 0
-            timeout_minutes = 60  # initial timeout
 
             while True:
                 status_res = requests.get(f"{self.base_url}/scan/result/{task_id}", headers=self.headers, timeout=5)
@@ -102,23 +103,17 @@ class EnterpriseScanner:
                 elif status_data["status"] == "failed":
                     return [f"WARNING: Enterprise Worker failed: {status_data.get('error')}"]
                 
-                time.sleep(6)
-                elapsed += 6
                 
-                if elapsed >= timeout_minutes * 60:
-                    try:
-                        answer = input(f"\n⏱️  Scan is taking long ({timeout_minutes} min). Continue waiting? [y/n]: ").strip().lower()
-                    except EOFError:
-                        answer = "n"
-                    
-                    if answer == "y":
-                        elapsed = 0
-                    else:
-                        # Trying to get a partial result
-                        partial = status_data.get("result", {}).get("threats", [])
-                        if partial:
-                            return [f"WARNING: Partial scan result (timeout):"] + partial
-                        return ["WARNING: Enterprise scan timed out. User cancelled."]
+                if elapsed >= MAX_WAIT_SECONDS:
+                    # Non-interactive: never call input() in a scanner
+                    partial = status_data.get("result", {}).get("threats", [])
+                    logger.warning(f"Enterprise scan timeout after {elapsed}s.")
+                    return (["WARNING: Enterprise scan timed out."] + partial) if partial else \
+                           ["WARNING: Enterprise scan timed out. No partial results."]
+                
+                time.sleep(POLL_INTERVAL_SECONDS)
+                elapsed += POLL_INTERVAL_SECONDS
+        
         except Exception as e:
             return[f"WARNING: Failed to reach Enterprise Scanner: {e}"]
 
