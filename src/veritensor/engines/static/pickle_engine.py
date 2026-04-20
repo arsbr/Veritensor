@@ -49,9 +49,11 @@ SAFE_BUILTINS = {
     "str", "bytes", "object", "print"
 }
 
-def _is_safe_import(module: str, name: str) -> bool:
+def _is_safe_import(module: str, name: str, extra_allowed: set = None) -> bool:
     """Checks if the module is in the strict allowlist."""
-    
+    if extra_allowed and (module in extra_allowed or module.split(".")[0] in extra_allowed):
+        return True
+
     if module in SAFE_MODULES:
         if module in ("builtins", "__builtin__"):
             return name in SAFE_BUILTINS
@@ -66,7 +68,7 @@ def _is_safe_import(module: str, name: str) -> bool:
     
     return False
 
-def scan_pickle_stream(data: Union[bytes, BinaryIO], strict_mode: bool = True) -> List[str]:
+def scan_pickle_stream(data: Union[bytes, BinaryIO], strict_mode: bool = True, extra_allowed_modules: List[str] = None) -> List[str]:
     """
     Disassembles a pickle stream (or Zip/Wheel) and checks for dangerous imports.
     Supports both bytes (legacy) and file-like objects (streaming).
@@ -204,6 +206,9 @@ def _check_import(module: str, name: str, strict_mode: bool) -> str:
 
     if strict_mode:
         if not _is_safe_import(module, name):
-            return f"UNSAFE_IMPORT: {module}.{name}"
+            return (
+                f"UNSAFE_IMPORT: {module}.{name} — "
+                f"If this is a trusted module, add '{module.split('.')[0]}' "
+                f"to allowed_modules in veritensor.yaml")
             
     return ""
