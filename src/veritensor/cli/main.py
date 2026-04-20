@@ -190,9 +190,14 @@ def fetch_server_policies(report_url: str, api_key: str) -> Tuple[Optional[dict]
     return None,[]
 
 def is_suppressed(file_path: str, threat_msg: str, suppressions: List[dict]) -> bool:
-    # Checks if there is a threat in the server exclusion list.
     for supp in suppressions:
-        if supp["file_path"] in file_path and supp["threat_type"] in threat_msg:
+        supp_path = supp.get("file_path", "")
+        supp_type = supp.get("threat_type", "")
+        # Require non-empty values and match by filename, not substring of full path
+        if not supp_path or not supp_type:
+            continue
+        file_name = Path(file_path).name
+        if file_name == supp_path and supp_type in threat_msg:
             return True
     return False
 
@@ -200,11 +205,12 @@ def is_suppressed(file_path: str, threat_msg: str, suppressions: List[dict]) -> 
 def check_severity(threats: List[str], threshold: str) -> bool:
     threshold_val = SEVERITY_LEVELS.get(threshold.upper(), 4)
     for threat in threats:
-        parts = threat.split(":")
-        if len(parts) > 0:
-            level_str = parts[0].strip().upper()
-            level_val = SEVERITY_LEVELS.get(level_str, 3) 
-            if level_val >= threshold_val: return True
+        # Handle both "CRITICAL: ..." and "LINE 2: Semantic: CRITICAL: ..."
+        for part in threat.split(":"):
+            level_str = part.strip().upper()
+            level_val = SEVERITY_LEVELS.get(level_str, 0)
+            if level_val >= threshold_val:
+                return True
     return False
 
 # --- WORKER FUNCTION ---
@@ -267,7 +273,7 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
     try:
         if ext in PICKLE_EXTS:
             with get_stream_for_path(file_path_str) as f:
-                threats = scan_pickle_stream(f, strict_mode=True)
+                threats = scan_pickle_stream(f, strict_mode=True, extra_allowed_modules=set(config.allowed_modules) if config.allowed_modules else None)
                 for t in threats: scan_res.add_threat(t)
         elif ext in KERAS_EXTS:
             if is_s3: scan_res.add_threat("WARNING: S3 scanning not supported for Keras yet.")
@@ -392,6 +398,7 @@ def _run_scan_process(
     if jobs is None:
         try: jobs = multiprocessing.cpu_count()
         except NotImplementedError: jobs = 1
+    jobs = max(1, jobs)
     if len(files_to_scan) == 1: jobs = 1
 
     # 2. Prepare Tasks & Remote Cache Check
@@ -431,7 +438,7 @@ def _run_scan_process(
             
         file_hash = local_hashes_map.get(str(f))
         
-        # Если сервер знает этот файл, мы НЕ добавляем его в tasks!
+        # If the server knows this file, we DON'T add it to tasks
         if file_hash and file_hash in remote_cache_results:
             remote_data = remote_cache_results[file_hash]
             res = ScanResult(file_path=str(f), status=remote_data["status"], file_hash=file_hash)
@@ -443,6 +450,9 @@ def _run_scan_process(
 
     # 3. Execute
     executor = None
+    if not tasks:
+        hash_cache.close()
+        return results
     try:
         with Progress(
             SpinnerColumn(), 
@@ -475,9 +485,11 @@ def _run_scan_process(
                     results.append(err_res)
                 progress.advance(main_task)
     finally:
-        if executor is not None:
-            executor.shutdown(wait=False, cancel_futures=True)
-        hash_cache.close()
+        try:
+            if executor is not None:
+                executor.shutdown(wait=False, cancel_futures=True)
+        finally:
+            hash_cache.close()
         
     return results
 
@@ -505,7 +517,7 @@ def scan(
     config = ConfigLoader.load()
     if verbose: logger.setLevel(logging.DEBUG)
     is_machine_output = (json_output or sarif_output or sbom_output) and not output_file
-
+    
     # Passing the flags from the console to the global config object
     config.report_url = report_to or config.report_url
     config.api_key = api_key or config.api_key
@@ -598,15 +610,14 @@ def scan(
                 f.write(machine_text)
             if not is_machine_output:
                 console.print(f"[bold green]✅ Report saved to: {output_file}[/bold green]")
-
-            _print_table(filtered_results)
-
+            if not is_machine_output:
+                _print_table(filtered_results)
         else:
             print(machine_text)
     else:
         _print_table(filtered_results)
 
-
+    
     # Telemetry
     if report_to or config.report_url:
         if not is_machine_output: console.print(f"[dim]📡 Sending telemetry...[/dim]")
@@ -632,6 +643,15 @@ def scan(
         else:
             block_reasons.append("License")
             exit_code = 1
+
+    if not is_machine_output:
+        failing_files = [r for r in filtered_results if r.status == "FAIL"]
+        if failing_files and exit_code == 0:
+            console.print(
+                f"\n[yellow]ℹ️  {len(failing_files)} file(s) have findings below "
+                f"the blocking threshold ({config.fail_on_severity}). "
+                f"Lower the threshold in veritensor.yaml to block these.[/yellow]"
+            )
 
     if exit_code != 0:
         if not is_machine_output: console.print(f"\n[bold red]❌ BLOCKING DEPLOYMENT due to: {', '.join(block_reasons)}[/bold red]")
@@ -665,6 +685,7 @@ def manifest(
 
     saved_path = generate_manifest(results, output)
     console.print(f"[green]✅ Manifest saved to: {saved_path}[/green]")
+
 def _print_table(results: List[ScanResult]):
     table = Table(title="🛡️ Veritensor Scan Report", header_style="bold magenta")
     table.add_column("File", style="cyan", no_wrap=True)
@@ -706,7 +727,7 @@ def keygen(output_prefix: str = "veritensor"):
 
 @app.command()
 def update():
-    SIG_URL = "https://raw.githubusercontent.com/ArseniiBrazhnyk/Veritensor/main/src/veritensor/engines/static/signatures.yaml"
+    SIG_URL = "https://raw.githubusercontent.com/arsbr/Veritensor/main/src/veritensor/engines/static/signatures.yaml"
     target_dir = Path.home() / ".veritensor"
     target_file = target_dir / "signatures.yaml"
     console.print(f"⬇️  Checking for updates...")
