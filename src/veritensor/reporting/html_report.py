@@ -10,7 +10,7 @@
 
 import datetime
 from typing import List
-from jinja2 import Template
+from jinja2 import Template, Environment
 from veritensor.core.types import ScanResult
 from veritensor import __version__
 
@@ -219,7 +219,8 @@ HTML_TEMPLATE = """
                             | replace('CRITICAL: ', '')
                             | replace('HIGH: ', '')
                             | replace('MEDIUM: ', '')
-                            | replace('LOW: ', '') }}
+                            | replace('LOW: ', '') 
+                            | e }}
                         <span class="copy-hint">📋 copy</span>
                     </li>
                 {% endfor %}
@@ -322,6 +323,8 @@ def generate_html_report(
     output_path: str = "veritensor-report.html"
 ) -> str:
     """Generates a standalone HTML report for CISOs and Auditors."""
+    env = Environment(autoescape=True)
+    template = env.from_string(HTML_TEMPLATE)
     passed = sum(1 for r in results if r.status == "PASS")
     failed = sum(1 for r in results if r.status == "FAIL")
     sev_counts = _count_severities(results)
@@ -331,7 +334,6 @@ def generate_html_report(
         if res.file_path:
             res.file_path = res.file_path.replace("\\", "/")
 
-    template = Template(HTML_TEMPLATE)
     html_content = template.render(
         date=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         version=__version__,
