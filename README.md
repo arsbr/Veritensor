@@ -17,7 +17,8 @@ Unlike standard SAST tools (which focus on code), Veritensor understands the bin
 2.  **Data & RAG:** Streaming scan of **Parquet, CSV, Excel, PDF** to detect Data Poisoning, Prompt Injections, and PII.
 3.  **Notebooks:** Hardening of **Jupyter (.ipynb)** files by detecting leaked secrets (using Entropy analysis), malicious magics, and XSS.
 4.  **Supply Chain:** Audits **dependencies** (`requirements.txt`, `poetry.lock`) for Typosquatting and known CVEs (via OSV.dev).
-5.  **Governance:** Generates cryptographic **Data Manifests** (Provenance) and signs containers via **Sigstore**.
+5.  **Agentic AI & MCP Servers:** Pure AST analysis of Python files to detect Agent Hijacking risks in `@mcp.tool()` functions. Scans `claude_desktop_config.json` and `mcp.json` for over-privileged permissions.
+6.  **Governance:** Generates cryptographic **Data Manifests** (Provenance) and signs containers via **Sigstore**.
 
 ---
 
@@ -121,6 +122,24 @@ veritensor scan ./research/experiment.ipynb
 Create a standalone, interactive HTML dashboard of your scan results:
 ```bash
 veritensor scan ./project --html
+```
+
+### 11. Scan MCP Servers for Agent Hijacking
+Detect dangerous tool logic and over-privileged permissions in your AI agent infrastructure:
+```bash
+# Scan MCP server Python files (AST analysis — no code execution)
+veritensor scan ./mcp_servers/
+
+# Also audit MCP configuration files
+veritensor scan ./claude_desktop_config.json
+```
+
+**Example output:**
+```
+CRITICAL: MCP Agent Hijacking Risk [OS_COMMAND_EXECUTION] in tool 'run_script'
+  (line 14): os.system() inside agent tool — no human-in-the-loop confirmation
+HIGH: MCP Config [LETHAL_TRIFECTA] server 'everything':
+  filesystem + network + private data — prompt injection can silently exfiltrate all data
 ```
 
 **Example Output:**
@@ -265,7 +284,11 @@ For custom parsers and SOAR automation:
 ```bash
 veritensor scan ./models --json
 ```
-
+### 5. Excel report
+Create an Excel report with data about the problems:
+```bash
+veritensor scan ./models --excel
+```
 ---
 
 ## 🔐 Supply Chain Security (Container Signing)
@@ -343,6 +366,8 @@ veritensor_audit:
   script:
     - veritensor scan . --jobs 4
   allow_failure: false
+```
+
 ---
 
 ## 📂 Supported Formats
