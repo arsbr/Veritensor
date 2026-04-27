@@ -170,18 +170,34 @@ def _scan_ast(code: str, cell_num: int) -> List[str]:
         for node in ast.walk(tree):
             # Check Imports
             if isinstance(node, (ast.Import, ast.ImportFrom)):
-                names = []
+                module_names = []
                 if isinstance(node, ast.Import):
-                    names = [n.name for n in node.names]
+                    module_names = [alias.name for alias in node.names]
                 elif isinstance(node, ast.ImportFrom) and node.module:
-                    names = [node.module]
-                
-                for name in names:
-                    severity = get_severity(name, "*")
-                    if severity == "CRITICAL":
-                        threats.append(f"CRITICAL: Unsafe import in cell {cell_num}: '{name}'")
+                    module_names = [node.module]
 
-            # Check Function Calls
+                for mod_name in module_names:
+                    # FIX: Check both with a wildcard (for fully-blocked modules like os/subprocess)
+                    # AND with specific imported names (for partially-blocked modules like builtins).
+                    severity = get_severity(mod_name, "*")
+
+                    if severity is None and isinstance(node, ast.ImportFrom):
+                        # For "from builtins import eval" — check individual imported names
+                        for alias in node.names:
+                            severity = get_severity(mod_name, alias.name)
+                            if severity:
+                                threats.append(
+                                    f"{severity}: Dangerous import in cell {cell_num}: "
+                                    f"'from {mod_name} import {alias.name}'"
+                                )
+                        continue
+
+                    if severity == "CRITICAL":
+                        threats.append(
+                            f"CRITICAL: Unsafe import in cell {cell_num}: '{mod_name}'"
+                        )
+
+            # Check Function Calls (unchanged)
             if isinstance(node, ast.Call):
                 if isinstance(node.func, ast.Attribute):
                     if isinstance(node.func.value, ast.Name):
@@ -189,12 +205,19 @@ def _scan_ast(code: str, cell_num: int) -> List[str]:
                         method = node.func.attr
                         severity = get_severity(module, method)
                         if severity:
-                            threats.append(f"{severity}: Dangerous call in cell {cell_num}: {module}.{method}()")
+                            threats.append(
+                                f"{severity}: Dangerous call in cell {cell_num}: "
+                                f"{module}.{method}()"
+                            )
                 elif isinstance(node.func, ast.Name):
                     func_name = node.func.id
                     severity = get_severity("builtins", func_name)
                     if severity:
-                        threats.append(f"{severity}: Dangerous call in cell {cell_num}: {func_name}()")
+                        threats.append(
+                            f"{severity}: Dangerous call in cell {cell_num}: {func_name}()"
+                        )
     except Exception:
         pass
+
     return threats
+
