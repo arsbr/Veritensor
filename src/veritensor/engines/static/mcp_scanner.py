@@ -125,13 +125,13 @@ _SEVERITY_MAP = {
     "DATABASE_MUTATION": "HIGH",
     "UNRESTRICTED_FILE_WRITE": "HIGH",
     "POTENTIAL_DATA_EXFILTRATION": "MEDIUM",
-    "ENV_SECRET_ACCESS": "MEDIUM",
+    "ENV_SECRET_ACCESS": "LOW",
 }
 
 # Human-in-the-loop parameter names that indicate the tool has a confirmation gate
 _HITL_PARAM_NAMES = frozenset({"confirm", "approved", "dry_run", "dryrun", "force"})
 
-
+_STDLIB_ENTRYPOINTS = frozenset({"main", "__main__", "cli", "run", "start", "app"})
 # ---------------------------------------------------------------------------
 # Result types
 # ---------------------------------------------------------------------------
@@ -156,16 +156,41 @@ class MCPScanResult:
     def has_threats(self) -> bool:
         return bool(self.findings)
 
+    @property
+    def unique_tools_with_issues(self) -> int:
+        """Returns the number of unique vulnerable tools (not the total number of finds)."""
+        return len({f.tool_name for f in self.findings})
+
     def to_threat_strings(self) -> List[str]:
-        """Converts findings to the flat threat string format used by the scan pipeline."""
-        out = []
+        """
+        Converts the findings into rows for the report.
+        GROUPS threats by the name of the tool to avoid spam.
+        """
+        out =[]
+        
+        # use interface hints: _BOS_ "tool_name": [search1, search2] }
+        tools_map = {}
         for f in self.findings:
-            hitl_note = ""
+            tools_map.setdefault(f.tool_name,[]).append(f)
+            
+        for tool_name, tool_findings in tools_map.items():
+            # Determine the maximum criticality for this tool
+            sev_weights = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
+            highest_sev = max(tool_findings, key=lambda x: sev_weights.get(x.severity, 0)).severity
+            
+            # Collect unique threat categories (for example: OS_COMMAND_EXECUTION, UNRESTRICTED_FILE_WRITE)
+            categories = ", ".join(sorted(set(f.threat_category for f in tool_findings)))
+            
+            # Collect the details line by line
+            details = " | ".join(f"{f.detail} (line {f.line})" for f in tool_findings)
+            
             out.append(
-                f"{f.severity}: MCP Agent Hijacking Risk [{f.threat_category}] "
-                f"in tool '{f.tool_name}' (line {f.line}): {f.detail}{hitl_note}"
+                f"{highest_sev}: MCP Agent Hijacking Risk in tool '{tool_name}' "
+                f"[{categories}]: {details}"
             )
+            
         return out
+
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +214,10 @@ class _MCPToolVisitor(ast.NodeVisitor):
 
     visit_AsyncFunctionDef = visit_FunctionDef
 
+    
     def _is_mcp_tool(self, node: ast.FunctionDef) -> bool:
+        if node.name.lower() in _STDLIB_ENTRYPOINTS:
+            return False
         for dec in node.decorator_list:
             name = _decorator_base_name(dec)
             if name and name.lower() in _MCP_TOOL_DECORATORS:
@@ -216,9 +244,18 @@ class _MCPToolVisitor(ast.NodeVisitor):
                     continue
 
                 if call_mod == mod_pat and call_attr == attr_pat:
-                    detail = f"`{mod_pat}.{attr_pat}()` inside agent tool"
-                    if not self._current_tool_has_hitl:
+                  
+                    if label == "ENV_SECRET_ACCESS":
+                        detail = (
+                            f"`{mod_pat}.{attr_pat}()` inside agent tool — "
+                            f"if injected, agent may be directed to read and expose sensitive env vars"
+                        )
+                    else:
+                        detail = f"`{mod_pat}.{attr_pat}()` inside agent tool"
+                        
+                    if not self._current_tool_has_hitl and label != "ENV_SECRET_ACCESS":
                         detail += " — no human-in-the-loop confirmation parameter"
+                        
                     self._add(tool_name, call.lineno, label, detail)
 
         # Special SQL mutation detection
@@ -226,7 +263,11 @@ class _MCPToolVisitor(ast.NodeVisitor):
             self._add(tool_name, call.lineno, "DATABASE_MUTATION",
                       "SQL mutation keyword in execute() call")
 
+
     def _add(self, tool_name: str, line: int, category: str, detail: str) -> None:
+        existing_key = (tool_name, category)
+        if any((f.tool_name, f.threat_category) == existing_key for f in self.findings):
+            return
         self.findings.append(MCPFinding(
             tool_name=tool_name,
             line=line,
