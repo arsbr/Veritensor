@@ -39,13 +39,21 @@ class RemoteStream(io.IOBase):
             parsed = urlparse(url)
             if parsed.scheme not in ("http", "https"):
                 raise ValueError(f"Invalid scheme: {parsed.scheme}")
-            
+
             domain = parsed.netloc.lower()
             is_allowed = (domain in ALLOWED_DOMAINS) or (domain.endswith(".huggingface.co"))
-            
+
+            # warning-only allowed any URL through,
+            # completely bypassing the domain allowlist.
             if not is_allowed:
-                logger.warning(f"Security Warning: Accessing external domain: {domain}")
-                
+                raise ValueError(
+                    f"SSRF Protection: Domain '{domain}' is not in the allowed list "
+                    f"({', '.join(ALLOWED_DOMAINS)}). "
+                    f"Only HuggingFace domains are permitted for remote streaming."
+                )
+
+        except ValueError:
+            raise
         except Exception as e:
             raise ValueError(f"Invalid URL format: {e}")
 
