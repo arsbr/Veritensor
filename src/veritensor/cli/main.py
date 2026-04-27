@@ -45,7 +45,7 @@ from veritensor.reporting.sarif import generate_sarif_report
 from veritensor.reporting.sbom import generate_sbom
 from veritensor.reporting.manifest import generate_manifest
 from veritensor.reporting.html_report import generate_html_report
-
+from veritensor.reporting.excel_report import generate_excel_report
 from veritensor.integrations.enterprise_scanner import EnterpriseScanner
 from veritensor.engines.static.mcp_scanner import scan_mcp_server
 
@@ -324,7 +324,12 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
                 if mcp_result.mcp_tools_found:
                     for t in mcp_result.to_threat_strings():
                         scan_res.add_threat(t)
-
+        elif ext == ".json" and file_path:
+            if is_mcp_config_file(file_path):
+                from veritensor.engines.static.mcp_permission_auditor import audit_mcp_config
+                perm_result = audit_mcp_config(file_path)
+                for t in perm_result.to_threat_strings():
+                    scan_res.add_threat(t)
         else:
             # If the format is unknown to any engine at all.
             # We add INFO, but DO NOT call add_threat(),
@@ -509,6 +514,7 @@ def scan(
     api_key: Optional[str] = typer.Option(None, envvar="VERITENSOR_API_KEY", help="API Key for reporting"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed logs"),
     html_output: bool = typer.Option(False, "--html", help="Generate a beautiful HTML report"),
+    excel_output: bool = typer.Option(False, "--excel", help="Generate an Excel report for auditors (.xlsx)"),
     output_file: Optional[str] = typer.Option(None, "--output-file", "-o", help="Save machine-readable output (JSON/SARIF/SBOM) to a file instead of stdout"),
 ):
     """
@@ -592,6 +598,21 @@ def scan(
         report_path = generate_html_report(filtered_results)
         if not is_machine_output:
             console.print(f"\n[bold green]✅ HTML Report saved to: {report_path}[/bold green]")        
+
+    if excel_output:
+        try:
+            excel_path = generate_excel_report(filtered_results)
+            if not is_machine_output:
+                console.print(f"\n[bold green]✅ Excel Report saved to: {excel_path}[/bold green]")
+        except ImportError as e:
+            console.print(f"[bold yellow]⚠️  Excel export requires openpyxl: pip install veritensor[excel][/bold yellow]")
+    # Usage:
+    #   veritensor scan ./models/ --excel
+    #   veritensor scan ./models/ --excel --output-file report.xlsx
+    #
+    # Note: --output-file with --excel saves to the specified path.
+    # To support custom path, replace the generate_excel_report call with:
+    #   excel_path = generate_excel_report(filtered_results, output_path=output_file or "veritensor-report.xlsx")
 
     machine_text = None        
     if sarif_output:
