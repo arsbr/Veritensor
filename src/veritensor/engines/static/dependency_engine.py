@@ -149,8 +149,19 @@ def _check_osv_batch(packages: Dict[str, str]) -> List[str]:
     """Queries OSV.dev API in a single batch request."""
     threats = []
     payload = {"queries": []}
-    pkg_list = [] 
-    
+    pkg_list = []
+
+    # OSV.dev does not publish a hard batch limit, but large payloads risk
+    # 413 / rate-limiting. Cap at 500 packages per call to stay well within limits.
+    # For most real-world lock files (poetry.lock, Pipfile.lock) this is sufficient.
+    OSV_BATCH_LIMIT = 500
+    if len(packages) > OSV_BATCH_LIMIT:
+        logger.warning(
+            f"Dependency list has {len(packages)} packages — "
+            f"truncating OSV check to first {OSV_BATCH_LIMIT} entries."
+        )
+        packages = dict(list(packages.items())[:OSV_BATCH_LIMIT])
+
     for name, version in packages.items():
         payload["queries"].append({
             "package": {"name": name, "ecosystem": "PyPI"},
@@ -292,3 +303,5 @@ def _safe_read_text(path: Path) -> str:
         except UnicodeDecodeError:
             continue
     return raw_bytes.decode('utf-8', errors='ignore')
+
+
