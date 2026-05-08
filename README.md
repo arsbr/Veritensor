@@ -264,30 +264,85 @@ with DAG('secure_rag_ingestion', start_date=datetime(2026, 1, 1)) as dag:
 Veritensor supports industry-standard formats for integration with security dashboards and audit tools.
 
 ### 1. Interactive HTML Dashboard
-Generate a visually rich, standalone HTML report designed for CISOs and security audits. Includes severity breakdowns, charts, and easy copy-to-clipboard functionality for Jira tickets.
+Generate a visually rich, standalone HTML report designed for CISOsand security audits. Includes severity breakdowns, charts, and copy-to-clipboard functionality for Jira tickets.
+
 ```bash
 veritensor scan ./models --html
+veritensor scan ./models --html --output-file report.html
+```
+### 2. EU AI Act Compliance Report
+Generate a standalone compliance gap report that maps scan findings to EU AI Act obligations (Articles 9–15, 17, 26, 50, 53). Includes a Readiness Score and required actions for each gap.
+
+```bash
+# Standalone compliance HTML report
+veritensor scan ./models --compliance eu-ai-act
+
+# HTML report + EU AI Act section combined
+veritensor scan ./models --html --compliance eu-ai-act
+
+# Save to specific path
+veritensor scan ./models --compliance eu-ai-act \
+    --output-file compliance-report.html
 ```
 
-### 2. GitHub Security (SARIF)
-Generate a report compatible with GitHub Code Scanning:
+Output example:
+🇪🇺 EU AI Act Readiness Score: 57%
+Compliance gaps: 3 article(s) affected
+┌─ GAPS DETECTED ──────────────────────────────────────
+│ Article 9  — Risk Management System [High Risk]
+│   Action: Remediate CRITICAL findings before production...
+│ Article 10 — Data and Data Governance [High Risk]
+│   Action: Review flagged datasets for PII...
+│ Article 13 — Transparency [High Risk]
+│   Action: Verify model provenance against HuggingFace...
+└──────────────────────────────────────────────────────
+
+### 3. GitHub Security (SARIF)
+Generate a report compatible with GitHub Code Scanning and GitHub Advanced Security.
+
 ```bash
-veritensor scan ./models --sarif > veritensor-report.sarif
+veritensor scan ./models --sarif
+veritensor scan ./models --sarif --output-file report.sarif
 ```
-### 3. Software Bill of Materials (SBOM)
-Generate a CycloneDX v1.5 SBOM to inventory your AI assets:
+
+### 4. Software Bill of Materials (AI-BOM)
+Generate a CycloneDX 1.5 AI-BOM to inventory AI artifacts. Required for EU AI Act Article 11 technical documentation.
+
 ```bash
-veritensor scan ./models --sbom > sbom.json
+veritensor scan ./models --sbom
+veritensor scan ./models --sbom --output-file sbom.json
 ```
-### 4. Raw JSON
-For custom parsers and SOAR automation:
-```bash
-veritensor scan ./models --json
-```
-### 5. Excel report
-Create an Excel report with data about the problems:
+
+### 5. Excel Report (Audit-Ready)
+Generate a multi-sheet Excel workbook for compliance auditors. Sheets: Summary, Incidents (one row per threat), All Files.
+
 ```bash
 veritensor scan ./models --excel
+veritensor scan ./models --excel --output-file audit-report.xlsx
+```
+
+### 6. Raw JSON
+For custom parsers, SOAR automation, and pipeline integration.
+
+```bash
+veritensor scan ./models --json
+veritensor scan ./models --json --output-file results.json
+```
+
+### 7. Combining formats
+Multiple output flags can be combined in a single scan:
+
+```bash
+# Full audit package: HTML + Excel + EU AI Act compliance
+veritensor scan ./models \
+    --html \
+    --excel \
+    --compliance eu-ai-act
+
+# CI/CD: SARIF for GitHub + JSON for SOAR
+veritensor scan ./models \
+    --sarif --output-file report.sarif \
+    --json --output-file results.json
 ```
 ---
 
