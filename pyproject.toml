@@ -36,7 +36,7 @@ dependencies = [
     "pillow>=12.2.0",
     "lxml>=6.1.0",
     # Fickling removed from here to avoid installing PyTorch (800MB+) for regular users
-    "gitpython>=3.1.47",
+    "gitpython>=3.1.49",
 ]
 
 
