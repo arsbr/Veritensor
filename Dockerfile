@@ -1,33 +1,24 @@
 # ==========================================
-# STAGE 1: Builder (Compile a pure Cosign)
+# STAGE 1: Builder (Компилируем чистый Cosign)
 # ==========================================
-FROM golang:1.25-bookworm AS cosign-builder
+FROM golang:1.26-bookworm AS cosign-builder
 
 ENV CGO_ENABLED=0
 ENV GOMAXPROCS=2
 
-ARG COSIGN_VERSION=v2.5.3
+RUN go install github.com/sigstore/cosign/v2/cmd/cosign@latest
 
-RUN go install github.com/sigstore/cosign/v2/cmd/cosign@${COSIGN_VERSION}
-
-# Checking embedded dependency versions
-RUN go version -m /go/bin/cosign
 # ==========================================
 # STAGE 2: Main CLI Image
 # ==========================================
 FROM python:3.11-slim-bookworm
 
-ENV TRIVY_DISABLE_VEX_NOTICE=true
 
-RUN apt-get update && \
-    apt-get upgrade -y && \
+RUN apt-get update && apt-get upgrade -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=cosign-builder /go/bin/cosign /usr/local/bin/cosign
-
-
-RUN cosign version
 
 # --- Install Veritensor ---
 WORKDIR /app
