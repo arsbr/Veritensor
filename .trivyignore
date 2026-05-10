@@ -14,3 +14,4 @@ CVE-2026-39883
 
 # Accepted Risk: DoS via crafted JWE. Cosign only processes our own trusted signatures in CI/CD.
 CVE-2026-34986
+CVE-2026-29181
