@@ -94,12 +94,34 @@ HTML_TEMPLATE = """
         .copy-hint { font-size: 11px; color: #aaa; float: right; margin-top: 2px; }
 
         /* Print */
-        @media print {
-            body { background: white; padding: 0; }
-            .container { box-shadow: none; max-width: 100%; padding: 0; }
+         @media print {
+            @page { margin: 1cm; } /* Задаем жесткие поля для бумаги A4 */
+            body { 
+                background: white; 
+                padding: 0; 
+                -webkit-print-color-adjust: exact; /* Заставляет браузер печатать цвета фонов (красный/зеленый) */
+                print-color-adjust: exact; 
+            }
+            .container { box-shadow: none; max-width: 100%; padding: 0; margin: 0; border: none; }
             .btn, .search-box, .copy-hint { display: none !important; }
-            .charts-row { page-break-inside: avoid; }
+            
+            /* Фиксим графики: выстраиваем их друг под другом, чтобы не сплющивались */
+            .charts-row { display: block; page-break-inside: avoid; }
+            .chart-wrap { width: 40%; margin: 0 auto 20px auto; }
+            .chart-bar-wrap { width: 100%; margin-bottom: 20px; }
+            
+            /* Фиксим карточки: используем Grid вместо Flexbox для печати */
+            .summary-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+            .card { padding: 10px; }
+            
+            /* Фиксим таблицу: заставляем длинные слова переноситься */
+            table { table-layout: fixed; width: 100%; }
+            th, td { word-wrap: break-word; overflow-wrap: break-word; }
             tr { page-break-inside: avoid; }
+            
+            /* Фиксим список угроз */
+            .threat-item { page-break-inside: avoid; border: 1px solid #ffcccc; }
+            .threat-item.mcp { border: 1px solid #e0ccff; }
         }
     </style>
 </head>
@@ -233,7 +255,38 @@ HTML_TEMPLATE = """
         {% endfor %}
         </tbody>
     </table>
-
+    {% if compliance_enabled %}
+    <div style="margin-top:40px; border-top: 2px solid #eee; padding-top:30px;">
+        <h2 style="color:#1a3c6e; margin-bottom:8px;">🇪🇺 EU AI Act Compliance Summary</h2>
+        <p style="color:#666; font-size:13px; margin-bottom:20px;">
+            This section maps scan findings to EU AI Act obligations.
+            Not legal advice — use for internal compliance assessment.
+        </p>
+        <div style="display:flex; gap:16px; margin-bottom:24px; flex-wrap:wrap;">
+            <div style="background:#f0f7ff; border:1px solid #bdd6f5; border-radius:8px; padding:16px 24px; text-align:center; flex:1; min-width:120px;">
+                <div style="font-size:11px; text-transform:uppercase; color:#888; margin-bottom:6px;">Readiness Score</div>
+                <div style="font-size:2rem; font-weight:700; color:{% if compliance_score >= 80 %}#27ae60{% elif compliance_score >= 50 %}#e67e22{% else %}#c0392b{% endif %};">{{ compliance_score }}%</div>
+            </div>
+            <div style="background:#f0f7ff; border:1px solid #bdd6f5; border-radius:8px; padding:16px 24px; text-align:center; flex:1; min-width:120px;">
+                <div style="font-size:11px; text-transform:uppercase; color:#888; margin-bottom:6px;">Controls with Gaps</div>
+                <div style="font-size:2rem; font-weight:700; color:#c0392b;">{{ compliance_gaps|length }}</div>
+            </div>
+            <div style="background:#f0f7ff; border:1px solid #bdd6f5; border-radius:8px; padding:16px 24px; text-align:center; flex:1; min-width:120px;">
+                <div style="font-size:11px; text-transform:uppercase; color:#888; margin-bottom:6px;">Satisfied Controls</div>
+                <div style="font-size:2rem; font-weight:700; color:#27ae60;">{{ compliance_clean|length }}</div>
+            </div>
+        </div>
+        {% for gap in compliance_gaps %}
+        <div style="border-left:4px solid #c0392b; background:#fff; border-radius:6px; margin-bottom:12px; padding:14px 18px; box-shadow:0 1px 4px rgba(0,0,0,.07);">
+            <div style="font-weight:700; color:#1a3c6e; margin-bottom:4px;">{{ gap.article }} — {{ gap.title }}</div>
+            <div style="font-size:13px; color:#555; margin-bottom:8px;">{{ gap.obligation }}</div>
+            <div style="background:#f0f7ff; border:1px solid #bdd6f5; border-radius:4px; padding:8px 12px; font-size:12px; color:#1a3c6e;">
+                📋 <strong>Required action:</strong> {{ gap.gap_action }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
 </div>
 
 <script>
@@ -298,6 +351,7 @@ function copyThreat(el) {
 """
 
 
+
 def _count_severities(results: List[ScanResult]) -> dict:
     counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
     for res in results:
@@ -320,7 +374,8 @@ def _count_mcp(results: List[ScanResult]) -> int:
 
 def generate_html_report(
     results: List[ScanResult],
-    output_path: str = "veritensor-report.html"
+    output_path: str = "veritensor-report.html",
+    include_compliance: bool = False
 ) -> str:
     """Generates a standalone HTML report for CISOs and Auditors."""
     env = Environment(autoescape=True)
@@ -334,6 +389,9 @@ def generate_html_report(
         if res.file_path:
             res.file_path = res.file_path.replace("\\", "/")
 
+    from veritensor.reporting.compliance_report import get_compliance_section_data
+    compliance_data = get_compliance_section_data(results) if include_compliance else {"compliance_enabled": False}
+
     html_content = template.render(
         date=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         version=__version__,
@@ -342,7 +400,8 @@ def generate_html_report(
         failed=failed,
         sev_counts=sev_counts,
         mcp_count=mcp_count,
-        results=results
+        results=results,
+        **compliance_data
     )
 
     with open(output_path, "w", encoding="utf-8") as f:
