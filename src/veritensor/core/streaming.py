@@ -1,4 +1,4 @@
-# Copyright 2025 Veritensor Security
+# Copyright 2026 Veritensor Security
 # Logic adapted from AIsbom (Apache 2.0 License)
 
 import io
@@ -6,7 +6,7 @@ import requests
 import logging
 from urllib.parse import urlparse
 from typing import Optional, List, Any
-from veritensor.core.networking import safe_dns_resolve
+from veritensor.core.networking import get_safe_session
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ class RemoteStream(io.IOBase):
     def _fetch_size(self) -> int:
         try:
             headers = {"Range": "bytes=0-0"}
-            with safe_dns_resolve(self.url):
+            with get_safe_session(self.url):
                 resp = self.session.get(self.url, headers=headers, stream=True, timeout=10)
                 resp.raise_for_status()
             
@@ -89,7 +89,7 @@ class RemoteStream(io.IOBase):
 
         headers = {"Range": f"bytes={self.pos}-{end}"}
         try:
-            with safe_dns_resolve(self.url):
+            with get_safe_session(self.url):
                 resp = self.session.get(self.url, headers=headers, timeout=30)
                 resp.raise_for_status()
             data = resp.content
@@ -148,10 +148,18 @@ class S3Stream(io.IOBase):
 
     def _fetch_size(self) -> int:
         try:
-            resp = self.s3.head_object(Bucket=self.bucket, Key=self.key)
-            return resp["ContentLength"]
+            headers = {"Range": "bytes=0-0"}
+            safe_sess = get_safe_session()
+            resp = safe_sess.get(self.url, headers=headers, stream=True, timeout=10)
+            resp.raise_for_status()
+            content_range = resp.headers.get("Content-Range")
+            if content_range and "/" in content_range:
+                return int(content_range.split("/")[-1])
+            if "Content-Length" in resp.headers:
+                return int(resp.headers["Content-Length"])
+            return 0
         except Exception as e:
-            logger.debug(f"Failed to access S3 object {self.bucket}/{self.key}: {e}")
+            logger.error(f"Failed to fetch size for {self.url}: {e}")
             raise
 
     def read(self, size: int = -1) -> bytes:
@@ -165,14 +173,19 @@ class S3Stream(io.IOBase):
 
         if end < self.pos: return b""
 
-        range_header = f"bytes={self.pos}-{end}"
+        headers = {"Range": f"bytes={self.pos}-{end}"}
         try:
-            resp = self.s3.get_object(Bucket=self.bucket, Key=self.key, Range=range_header)
-            data = resp["Body"].read()
+            # Use safe session for reading data
+            from veritensor.core.networking import get_safe_session
+            safe_sess = get_safe_session()
+            
+            resp = safe_sess.get(self.url, headers=headers, timeout=30)
+            resp.raise_for_status()
+            data = resp.content
             self.pos += len(data)
             return data
         except Exception as e:
-            logger.error(f"S3 Read error: {e}")
+            logger.error(f"Read error at offset {self.pos}: {e}")
             raise
 
     def seek(self, offset: int, whence: int = 0) -> int:
