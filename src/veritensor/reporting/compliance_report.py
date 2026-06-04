@@ -13,7 +13,7 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 from jinja2 import Environment
 
 from veritensor.core.types import ScanResult
@@ -490,7 +490,7 @@ def generate_compliance_report(
     results: List[ScanResult],
     standard: str = "eu-ai-act",
     output_path: str = "veritensor-compliance-report.html"
-) -> str:
+) -> Tuple[str, ComplianceReport]:
     """
     Generates a standalone EU AI Act compliance gap report.
     Called when user runs: veritensor scan ./models/ --compliance eu-ai-act
