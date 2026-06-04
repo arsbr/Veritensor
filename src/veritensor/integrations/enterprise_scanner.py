@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import List, Generator
 from veritensor.engines.data.dataset_engine import _stream_parquet, _stream_csv, _stream_jsonl
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,10 @@ class EnterpriseScanner:
 
             elapsed = 0
 
+            interval = 3.0
+            max_interval = 30.0
+            elapsed = 0.0
+
             while True:
                 status_res = requests.get(f"{self.base_url}/scan/result/{task_id}", headers=self.headers, timeout=5)
                 status_data = status_res.json()
@@ -108,16 +113,16 @@ class EnterpriseScanner:
                 elif status_data["status"] == "failed":
                     return [f"WARNING: Enterprise Worker failed: {status_data.get('error')}"]
                 
-                
                 if elapsed >= MAX_WAIT_SECONDS:
-                    # Non-interactive: never call input() in a scanner
                     partial = status_data.get("result", {}).get("threats", [])
                     logger.warning(f"Enterprise scan timeout after {elapsed}s.")
-                    return (["WARNING: Enterprise scan timed out."] + partial) if partial else \
-                           ["WARNING: Enterprise scan timed out. No partial results."]
+                    return (["WARNING: Enterprise scan timed out."] + partial) if partial else ["WARNING: Enterprise scan timed out. No partial results."]
                 
-                time.sleep(POLL_INTERVAL_SECONDS)
-                elapsed += POLL_INTERVAL_SECONDS
+                # Sleep with jitter to prevent thundering herd
+                sleep_time = interval + random.uniform(0, 1)
+                time.sleep(sleep_time)
+                elapsed += sleep_time
+                interval = min(interval * 1.5, max_interval)
         
         except Exception as e:
             return[f"WARNING: Failed to reach Enterprise Scanner: {e}"]
