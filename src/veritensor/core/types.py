@@ -20,6 +20,13 @@ class ScanResult:
     detected_license: Optional[str] = None
     repo_id: Optional[str] = None
     file_format: Optional[str] = None
+
+    # --- Annex IV Metadata ---
+    tensor_count: int = 0
+    extracted_metadata: dict = field(default_factory=dict)
+    
+    bias_data: Optional[dict] = None
+    
     def add_threat(self, message: str):
         self.threats.append(message)
         self.status = "FAIL"
