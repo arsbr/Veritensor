@@ -146,21 +146,24 @@ def _clean_version(v: str) -> Optional[str]:
     return v
 
 def _check_osv_batch(packages: Dict[str, str]) -> List[str]:
-    """Queries OSV.dev API in a single batch request."""
+    """Queries OSV.dev API in batches to respect API limits."""
+    threats = []
+    items = list(packages.items())
+    BATCH_SIZE = 500
+
+    # Proper batching instead of silent truncation
+    for batch_start in range(0, len(items), BATCH_SIZE):
+        batch = dict(items[batch_start:batch_start + BATCH_SIZE])
+        batch_threats = _check_osv_single_batch(batch)
+        threats.extend(batch_threats)
+
+    return threats
+
+def _check_osv_single_batch(packages: Dict[str, str]) -> List[str]:
+    """Queries OSV.dev API for a single batch (max 500)."""
     threats = []
     payload = {"queries": []}
     pkg_list = []
-
-    # OSV.dev does not publish a hard batch limit, but large payloads risk
-    # 413 / rate-limiting. Cap at 500 packages per call to stay well within limits.
-    # For most real-world lock files (poetry.lock, Pipfile.lock) this is sufficient.
-    OSV_BATCH_LIMIT = 500
-    if len(packages) > OSV_BATCH_LIMIT:
-        logger.warning(
-            f"Dependency list has {len(packages)} packages — "
-            f"truncating OSV check to first {OSV_BATCH_LIMIT} entries."
-        )
-        packages = dict(list(packages.items())[:OSV_BATCH_LIMIT])
 
     for name, version in packages.items():
         payload["queries"].append({
@@ -175,15 +178,14 @@ def _check_osv_batch(packages: Dict[str, str]) -> List[str]:
     try:
         response = requests.post(OSV_API_URL, json=payload, timeout=5)
         
-    
         if response.status_code == 429:
             logger.warning("OSV.dev API rate limit exceeded.")
-            return["WARNING: OSV.dev API rate limit exceeded. Vulnerability check skipped."]
+            return ["WARNING: OSV.dev API rate limit exceeded. Vulnerability check skipped."]
         elif response.status_code != 200:
             logger.debug(f"OSV API Error {response.status_code}: {response.text}")
-            return[f"WARNING: OSV.dev API unavailable (HTTP {response.status_code})."]
+            return [f"WARNING: OSV.dev API unavailable (HTTP {response.status_code})."]
             
-        results = response.json().get("results",[])
+        results = response.json().get("results", [])
         for i, res in enumerate(results):
             if "vulns" in res:
                 name, ver = pkg_list[i]
@@ -196,9 +198,10 @@ def _check_osv_batch(packages: Dict[str, str]) -> List[str]:
         return ["WARNING: OSV.dev API timeout. Vulnerability check skipped."]
     except Exception as e:
         logger.debug(f"OSV connection failed: {e}")
-        return["WARNING: Failed to connect to OSV.dev vulnerability database."]
+        return ["WARNING: Failed to connect to OSV.dev vulnerability database."]
         
     return threats
+
 
 def _parse_requirements(path: Path) -> Dict[str, Optional[str]]:
     deps = {}
