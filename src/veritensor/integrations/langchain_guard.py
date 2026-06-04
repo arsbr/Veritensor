@@ -3,68 +3,52 @@
 
 import logging
 from pathlib import Path
-from typing import List, Any
+from typing import List, Any, Optional
 
-# Soft import so as not to break Veritensor if the user does not have a LangChain
 try:
     from langchain_core.document_loaders import BaseLoader
     from langchain_core.documents import Document
     LANGCHAIN_AVAILABLE = True
 except ImportError:
     LANGCHAIN_AVAILABLE = False
-    BaseLoader = object # An inheritance stub
+    BaseLoader = object 
 
 from veritensor.engines.content.injection import scan_document
+from veritensor.integrations.enterprise_scanner import EnterpriseScanner
 
 logger = logging.getLogger(__name__)
 
 class VeritensorSecurityError(Exception):
-    """An exception that is thrown when threats are detected in the data."""
     pass
 
 class SecureLangChainLoader(BaseLoader):
-    """
-    A wrapper for any LangChain loader. 
-    Scans the file for Prompt Injections, PII, and Stealth attacks before uploading.
-    """
-    def __init__(self, file_path: str, base_loader: BaseLoader, strict_mode: bool = True):
-        """
-        :param file_path: The path to the file that is being uploaded.
-        :param base_loader: An instance of the original loader (for example, PyPDFLoader).
-        :param strict_mode: If True, throws an error. If False, it only writes to the log.
-        """
+    def __init__(self, file_path: str, base_loader: BaseLoader, strict_mode: bool = True, enterprise_url: Optional[str] = None, api_key: Optional[str] = None):
         if not LANGCHAIN_AVAILABLE:
             raise ImportError("LangChain is not installed. Run 'pip install langchain-core'")
             
         self.file_path = Path(file_path)
         self.base_loader = base_loader
         self.strict_mode = strict_mode
+        self.enterprise_scanner = EnterpriseScanner(enterprise_url, api_key) if enterprise_url and api_key else None
 
     def load(self) -> List['Document']:
-        """Перехватываем загрузку и сканируем файл."""
         logger.info(f"🛡️ Veritensor: Scanning {self.file_path.name} before ingestion...")
-        
-        if not self.file_path.exists():
-            raise FileNotFoundError(f"File not found: {self.file_path}")
+        if not self.file_path.exists(): raise FileNotFoundError(f"File not found: {self.file_path}")
 
-        # Start engine
-        threats = scan_document(self.file_path)
+        # Enterprise ML Scan or Local Regex Fallback
+        if self.enterprise_scanner:
+            threats = self.enterprise_scanner.scan_file_remotely(self.file_path)
+        else:
+            threats = scan_document(self.file_path)
 
         if threats:
             threat_msg = "\n".join(threats)
-            if self.strict_mode:
-                raise VeritensorSecurityError(
-                    f"Blocked ingestion of {self.file_path.name} due to security threats:\n{threat_msg}"
-                )
-            else:
-                logger.warning(f"⚠️ Veritensor Security Warning for {self.file_path.name}:\n{threat_msg}")
+            if self.strict_mode: raise VeritensorSecurityError(f"Blocked ingestion of {self.file_path.name}:\n{threat_msg}")
+            else: logger.warning(f"⚠️ Veritensor Security Warning:\n{threat_msg}")
 
-        # If there are no threats (or strict_mode=False), we give control to the original loader.
-        logger.info(f"✅ Veritensor: {self.file_path.name} is clean. Proceeding with ingestion.")
+        logger.info(f"✅ Veritensor: {self.file_path.name} is clean.")
         return self.base_loader.load()
 
     def lazy_load(self):
-        """Поддержка ленивой загрузки (для больших файлов)."""
-        # We scan the entire file once before streaming begins.
-        self.load() # Will trigger a security check
+        self.load() 
         yield from self.base_loader.lazy_load()
