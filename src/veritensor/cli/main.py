@@ -242,6 +242,7 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
     # --- HYBRID ROUTING (Sending heavy files to the server) ---
     # If the user has an Enterprise server connected
     already_remote_scanned = False
+    remote_threats = []
     if config.report_url and config.api_key and not is_s3 and file_path:
         
         
@@ -371,8 +372,17 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
             # so that the status remains PASS and the build does not fall due to an image or video.
             scan_res.threats.append(f"INFO: Format '{ext}' is not supported for deep scanning. Skipped.")
 
+    except PermissionError:
+        scan_res.add_threat(f"WARNING: Permission denied reading file '{file_name}'. Check OS permissions.")
+    except OSError as e:
+        scan_res.add_threat(f"WARNING: OS error reading file '{file_name}': {e}")
     except Exception as e:
         scan_res.add_threat(f"CRITICAL: Engine Error: {str(e)}")
+
+    # --- MERGE REMOTE THREATS ---
+    for t in remote_threats:
+        if t not in scan_res.threats:
+            scan_res.add_threat(t)
 
     # --- C. License Check ---
     if not is_s3 and file_path:
@@ -696,10 +706,6 @@ def scan(
         raise typer.Exit(code=0)
 
     
-
-    found_malware = False
-    found_license_issue = False
-    found_integrity_issue = False
     filtered_results = []
 
     for res in results:
@@ -708,16 +714,23 @@ def scan(
             if not is_noise(t) and not is_suppressed(res.file_path, t, server_suppressions)
         ]
         
-        blocking_threats = [t for t in real_threats if not t.startswith("INFO:")]
+        # Apply severity threshold from config
+        blocking_threats = [
+            t for t in real_threats 
+            if not t.startswith("INFO:") 
+            and not t.startswith("WARNING:")
+            and check_severity([t], config.fail_on_severity)
+        ]
         
         if blocking_threats:
             res.status = "FAIL"
-            res.threats = real_threats
         else:
             res.status = "PASS"
-            res.threats = real_threats
             
+        # Always keep all real threats for the report, even if they don't block the build
+        res.threats = real_threats
         filtered_results.append(res)
+
 
     # 5. FETCH BASELINE (request it BEFORE telemetry so that the server actually sees the LAST scan.)
     baseline_cache = {}
