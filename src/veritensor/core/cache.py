@@ -3,6 +3,7 @@ import sqlite3
 import logging
 from pathlib import Path
 from typing import Optional
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +13,18 @@ class HashCache:
     def __init__(self):
         self.conn = None
         self._init_db()
+        self._cleanup_old_entries() # Clean up on startup
+
+    def _cleanup_old_entries(self, days: int = 30):
+        """Remove cache entries not accessed in the last N days."""
+        if not self.conn:
+            return
+        try:
+            cutoff_mtime = time.time() - (days * 86400)
+            self.cursor.execute("DELETE FROM file_cache WHERE mtime < ?", (cutoff_mtime,))
+            self.conn.commit()
+        except Exception as e:
+            logger.debug(f"Cache cleanup failed: {e}")
 
     def _init_db(self):
         """Initializes the SQLite database and creates the table if not exists."""
