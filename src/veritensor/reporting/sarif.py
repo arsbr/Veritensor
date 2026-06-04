@@ -1,4 +1,4 @@
-# Copyright 2025 Veritensor Security
+# Copyright 2026 Veritensor Security
 #
 # This module generates SARIF v2.1.0 reports.
 # It allows Veritensor to integrate natively with GitHub Advanced Security.
@@ -66,23 +66,18 @@ def generate_sarif_report(scan_results: List[ScanResult], tool_version: str = __
         threats = file_res.threats
 
         for threat_msg in threats:
+            # Skip informational messages — SARIF is for actionable security findings only
+            if threat_msg.startswith("INFO:") or threat_msg.startswith("WARNING:"):
+                continue
+                
             rule_id = _map_threat_to_rule_id(threat_msg)
             
             result = {
                 "ruleId": rule_id,
-                "level": "error",
-                "message": {
-                    "text": threat_msg
-                },
-                "locations": [
-                    {
-                        "physicalLocation": {
-                            "artifactLocation": {
-                                "uri": file_path
-                            }
-                        }
-                    }
-                ]
+                # Map Veritensor severity to SARIF level
+                "level": "warning" if "MEDIUM" in threat_msg or "LOW" in threat_msg else "error",
+                "message": {"text": threat_msg},
+                "locations": [{"physicalLocation": {"artifactLocation": {"uri": file_path}}}]
             }
             sarif_results.append(result)
 
