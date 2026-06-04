@@ -52,24 +52,42 @@ class SafetensorsReader(ModelReader):
     def read_metadata(self, file_path: Path) -> Dict[str, Any]:
         try:
             with open(file_path, "rb") as f:
-                # Read the first 8 bytes to get the length of the JSON header
                 length_bytes = f.read(8)
                 if len(length_bytes) != 8:
                     return {"error": "File too small"}
                 
                 header_len = struct.unpack('<Q', length_bytes)[0]
-                
-                # Safety check: Header shouldn't be absurdly large (e.g., > 100MB)
                 if header_len > MAX_HEADER_SIZE:
-                    return {"error": f"Header too large ({header_len} bytes). Possible DoS attack or corrupted file."}
+                    return {"error": f"Header too large ({header_len} bytes)."}
 
-                # Read the JSON header
                 header_json_bytes = f.read(header_len)
                 header_data = json.loads(header_json_bytes)
-                
-                # Extract standard metadata if available
                 metadata = header_data.get("__metadata__", {})
                 
+                if "architecture" not in metadata:
+                    arch = "Unknown"
+                    tensor_names = list(header_data.keys())
+                    tensor_names_str = " ".join(tensor_names[:100]).lower() 
+                    
+                    if "lora" in tensor_names_str:
+                        arch = "LoRA Adapter"
+                    elif "self_attn" in tensor_names_str or "mlp.gate" in tensor_names_str:
+                        arch = "Llama / Mistral"
+                    elif "attention.self" in tensor_names_str:
+                        arch = "BERT / RoBERTa"
+                    elif "transformer.h" in tensor_names_str:
+                        arch = "GPT-2 / GPT-J"
+                    elif "decoder.layers" in tensor_names_str or "encoder.layers" in tensor_names_str:
+                        arch = "T5 / BART / Whisper"
+                    else:
+        
+                        first_tensor = [k for k in tensor_names if k != "__metadata__"]
+                        if first_tensor:
+                            arch = f"Custom ({first_tensor[0].split('.')[0]})"
+                        
+                    if arch != "Unknown":
+                        metadata["architecture"] = arch
+                        
                 return {
                     "format": "safetensors",
                     "metadata": metadata,
@@ -78,6 +96,7 @@ class SafetensorsReader(ModelReader):
         except Exception as e:
             logger.error(f"Failed to read safetensors {file_path}: {e}")
             return {"error": str(e)}
+
 
 
 class PyTorchZipReader(ModelReader):
