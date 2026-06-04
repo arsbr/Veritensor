@@ -63,6 +63,8 @@ def scan_notebook(file_path: Path) -> List[str]:
                     threats.extend(_scan_ast(clean_source, cell_num))
                 
                 # 3. Output Secrets (Leaked Keys) & PII
+                PII_OUTPUT_CELL_LIMIT = 10  # FIX: Prevent slow scans on massive notebooks
+                
                 for output in outputs_list:
                     output_type = output.get("output_type")
                     text_content = ""
@@ -73,39 +75,31 @@ def scan_notebook(file_path: Path) -> List[str]:
                         text_content = _extract_text(data.get("text/plain", []))
                     
                     if text_content:
-                        # Optimization: Scan only the beginning of large outputs
-                        scan_content = text_content[:MAX_OUTPUT_SCAN_SIZE]
-                        
-                        # A. Secrets (Regex & Simple)
-                        if is_match(scan_content, secret_patterns):
+                        # 3A. Secrets (Regex & Entropy)
+                        if is_match(text_content, secret_patterns):
                             for pat in secret_patterns:
-                                # Case 1: Regex Pattern (Entropy Check)
                                 if pat.startswith("regex:"): 
                                     regex_str = pat.replace("regex:", "", 1).strip()
                                     try:
-                                        # Scan OUTPUT content
-                                        matches = re.findall(regex_str, scan_content, re.IGNORECASE)
+                                        matches = re.findall(regex_str, text_content, re.IGNORECASE)
                                         for match in matches:
-                                            # If regex has groups (var, val) -> check entropy
                                             if isinstance(match, tuple) and len(match) >= 2:
                                                 secret_candidate = match[1] 
                                                 if is_high_entropy(secret_candidate):
                                                     threats.append(f"CRITICAL: High Entropy Secret detected in Cell {cell_num}: '{match[0]} = ...'")
-                                            # If regex has no groups (simple match) -> report match
                                             elif isinstance(match, str):
                                                 threats.append(f"CRITICAL: Secret pattern detected in Cell {cell_num} Output: '{match[:50]}'")
                                     except Exception:
                                         pass
-                                
-                                # Case 2: Simple String Match (FIXED)
                                 else:
-                                    if pat in scan_content:
+                                    if pat in text_content:
                                         threats.append(f"CRITICAL: Leaked secret detected in Cell {cell_num} Output: '{pat}'")
                         
-                        # B. PII (Presidio ML) 
-                        pii_threats = PIIScanner.scan(scan_content)
-                        if pii_threats:
-                            threats.extend([f"{t} in Cell {cell_num} Output" for t in pii_threats])
+                        # 3B. PII check (slow, apply limit to prevent freezing on massive outputs)
+                        if i < PII_OUTPUT_CELL_LIMIT:
+                            pii_threats = PIIScanner.scan(text_content)
+                            if pii_threats:
+                                threats.extend([f"{t} (Cell {cell_num} output)" for t in pii_threats])
                             
             # --- B. Markdown Cells (RAG Security) ---
             elif cell_type == "markdown":
