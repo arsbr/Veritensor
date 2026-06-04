@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class EnterpriseScanner:
     def __init__(self, base_url: str, api_key: str):
-        # Убираем /telemetry из URL, если юзер передал его
+        #  remove /telemetry from the URL if the user sent it.
         self.base_url = base_url.replace("/telemetry", "")
         self.headers = {"X-API-Key": api_key}
 
@@ -70,6 +70,11 @@ class EnterpriseScanner:
         try:
             # Getting the file size
             file_size = os.path.getsize(file_to_upload)
+
+            # Skip 0-byte files to prevent 411 Length Required errors from S3
+            if file_size == 0:
+                return ["INFO: File is empty (0 bytes). Remote scan skipped."]
+
             # Requesting a link
             req_url = f"{self.base_url}/upload/request"
             payload = {
