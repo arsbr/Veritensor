@@ -9,6 +9,7 @@ import warnings
 import json
 import os
 import datetime
+import time
 import requests
 import fnmatch
 import concurrent.futures
@@ -20,7 +21,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 from veritensor import __version__
-
+from urllib.parse import quote
 # --- Internal Modules ---
 from veritensor.core.config import ConfigLoader, VeritensorConfig, VERSION
 from veritensor.core.types import ScanResult
@@ -48,6 +49,9 @@ from veritensor.reporting.html_report import generate_html_report
 from veritensor.reporting.excel_report import generate_excel_report
 from veritensor.integrations.enterprise_scanner import EnterpriseScanner
 from veritensor.engines.static.mcp_scanner import scan_mcp_server
+from veritensor.reporting.compliance_report import generate_compliance_report, format_compliance_table
+from veritensor.engines.static.mcp_permission_auditor import audit_mcp_config, is_mcp_config_file
+
 
 # Robust import for rules
 try:
@@ -118,7 +122,10 @@ HEAVY_EXTS = {
 
             # --- Infrastructure & Logs (High risk of PII and Secret leaks) ---
             ".tf", ".tfvars", ".k8s", ".helm", ".tpl",
-            ".log", ".out", ".err"
+            ".log", ".out", ".err",
+
+            # Models to scan embedded metadata for injections
+            ".safetensors", ".gguf", ".ggml"
         }
 
         # Specific files that are sent to the server (name verification)
@@ -155,7 +162,7 @@ def is_noise(threat_msg: str) -> bool:
     return False
 
 def check_remote_cache(report_url: str, api_key: str, hashes: List[str], version: str = __version__) -> dict:
-    """Спрашивает сервер о статусе файлов по их хэшам."""
+    """Asks the server about the status of files based on their hashes."""
     if not report_url or not api_key or not hashes:
         return {}
     
@@ -164,7 +171,7 @@ def check_remote_cache(report_url: str, api_key: str, hashes: List[str], version
     payload = {"hashes": hashes, "scanner_version": version} # Added a version to the payload
     
     try:
-        response = requests.post(cache_url, headers=headers, json=payload, timeout=5)
+        response = requests.post(cache_url, headers=headers, json=payload, timeout=60)
         if response.status_code == 200:
             return response.json().get("cached_results", {})
     except Exception as e:
@@ -180,7 +187,7 @@ def fetch_server_policies(report_url: str, api_key: str) -> Tuple[Optional[dict]
     headers = {"X-API-Key": api_key}
     
     try:
-        response = requests.get(policy_url, headers=headers, timeout=5)
+        response = requests.get(policy_url, headers=headers, timeout=60)
         if response.status_code == 200:
             data = response.json()
             return data.get("config"), data.get("suppressions",[])
@@ -234,20 +241,22 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
 
     # --- HYBRID ROUTING (Sending heavy files to the server) ---
     # If the user has an Enterprise server connected
+    already_remote_scanned = False
     if config.report_url and config.api_key and not is_s3 and file_path:
         
         
         # Check if the extension OR the exact file name matches (in lowercase)
-        if ext in HEAVY_EXTS or filename_lower in HEAVY_FILES:
+        if (ext in HEAVY_EXTS or filename_lower in HEAVY_FILES) and filename_lower not in DEP_FILES:
             try:
                 scanner = EnterpriseScanner(config.report_url, config.api_key)
                 remote_threats = scanner.scan_file_remotely(file_path, full_scan=full_scan_dataset)
                 
                 if remote_threats:
                     for t in remote_threats: scan_res.add_threat(t)
-                    
-                # Файл проверен на сервере (ML, OCR, YARA), пропускаем локальные проверки
-                return scan_res
+                
+                already_remote_scanned = True    
+                # The file has been verified on the server (ML, OCR, YARA), so we skip the local checks
+                #return scan_res
             except Exception as e:
                 scan_res.add_threat(f"WARNING: Remote scan failed, falling back to local: {e}")
 
@@ -271,7 +280,13 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
 
     # --- B. Static Analysis ---
     try:
-        if ext in PICKLE_EXTS:
+        if file_name in DEP_FILES:
+            if is_s3: scan_res.add_threat("WARNING: S3 scanning not supported for Dependencies yet.")
+            else:
+                if file_path:
+                    threats = scan_dependencies(file_path)
+                    for t in threats: scan_res.add_threat(t)
+        elif ext in PICKLE_EXTS:
             with get_stream_for_path(file_path_str) as f:
                 threats = scan_pickle_stream(f, strict_mode=True, extra_allowed_modules=set(config.allowed_modules) if config.allowed_modules else None)
                 for t in threats: scan_res.add_threat(t)
@@ -281,55 +296,75 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
                 if file_path:
                     threats = scan_keras_file(file_path)
                     for t in threats: scan_res.add_threat(t)
-        elif ext in ALL_DOC_EXTS or filename_lower == "dockerfile":
-            if is_s3: scan_res.add_threat("WARNING: S3 scanning not supported for Documents yet.")
-            else:
-                if file_path:
-                    threats = scan_document(file_path)
-                    for t in threats: scan_res.add_threat(t)
         elif ext in NOTEBOOK_EXTS:
             if is_s3: scan_res.add_threat("WARNING: S3 scanning not supported for Notebooks yet.")
             else:
                 if file_path:
                     threats = scan_notebook(file_path)
                     for t in threats: scan_res.add_threat(t)
+        elif ext in ALL_DOC_EXTS or filename_lower == "dockerfile":
+            if not already_remote_scanned:
+                if is_s3: scan_res.add_threat("WARNING: S3 scanning not supported for Documents yet.")
+                else:
+                    if file_path:
+                        threats = scan_document(file_path)
+                        for t in threats: scan_res.add_threat(t)
         elif ext in DATASET_EXTS:
-            if is_s3: scan_res.add_threat("WARNING: S3 scanning not supported for Datasets yet.")
-            else:
-                if file_path:
-                    threats = scan_dataset(file_path, full_scan=full_scan_dataset)
-                    for t in threats: scan_res.add_threat(t)
-        elif file_name in DEP_FILES:
-            if is_s3: scan_res.add_threat("WARNING: S3 scanning not supported for Dependencies yet.")
-            else:
-                if file_path:
-                    threats = scan_dependencies(file_path)
-                    for t in threats: scan_res.add_threat(t)
+            if not is_s3 and file_path:
+                # Fetch Bias Profile from Control Plane before scanning
+                bias_profile = None
+                if config.report_url and config.api_key:
+                    try:
+            
+                        safe_filename = quote(file_name, safe='')
+                        prof_url = config.report_url.replace("/telemetry", f"/fairness/profiles/{safe_filename}")
+                        
+                        res = requests.get(prof_url, headers={"X-API-Key": config.api_key}, timeout=5)
+                        if res.status_code == 200:
+                            bias_profile = res.json().get("profile")
+                    except Exception as e:
+                        logger.debug(f"Failed to fetch bias profile: {e}")
+
+
+                # Pass the profile to the scanner
+                threats, bias_data = scan_dataset(file_path, full_scan=full_scan_dataset, bias_profile=bias_profile)
+                
+                for t in threats: 
+                    scan_res.add_threat(t)
+                    
+                # Attach bias data to the result so it gets sent in telemetry
+                if bias_data:
+                    scan_res.bias_data = bias_data
+                    # A visible indicator so the user knows it worked
+                    scan_res.threats.append("INFO: Article 10 Bias Evaluation completed. Data sent to Control Plane.")
+        
         # --- ENGINES ---
         elif ext in EXCEL_EXTS:
-            if is_s3: scan_res.add_threat("WARNING: S3 scanning not supported for Excel yet.")
-            else:
-                if file_path:
-                    threats = scan_excel(file_path)
-                    for t in threats: scan_res.add_threat(t)
+            if not already_remote_scanned:
+                if is_s3: scan_res.add_threat("WARNING: S3 scanning not supported for Excel yet.")
+                else:
+                    if file_path:
+                        threats = scan_excel(file_path)
+                        for t in threats: scan_res.add_threat(t)
         elif ext in ARCHIVE_EXTS:
-            if is_s3: scan_res.add_threat("WARNING: S3 scanning not supported for Archives yet.")
-            else:
-                if file_path:
-                    threats = scan_archive(file_path)
-                    for t in threats: scan_res.add_threat(t)
+            if not already_remote_scanned:
+                if is_s3: scan_res.add_threat("WARNING: S3 scanning not supported for Archives yet.")
+                else:
+                    if file_path:
+                        threats = scan_archive(file_path)
+                        for t in threats: scan_res.add_threat(t)
         elif ext in CODE_EXTS:
             if ext == ".py" and file_path:
                 mcp_result = scan_mcp_server(file_path)
                 if mcp_result.mcp_tools_found:
                     for t in mcp_result.to_threat_strings():
                         scan_res.add_threat(t)
-        elif ext == ".json" and file_path:
-            if is_mcp_config_file(file_path):
-                from veritensor.engines.static.mcp_permission_auditor import audit_mcp_config
-                perm_result = audit_mcp_config(file_path)
-                for t in perm_result.to_threat_strings():
-                    scan_res.add_threat(t)
+            elif ext == ".json" and file_path:
+                if is_mcp_config_file(file_path):
+                    from veritensor.engines.static.mcp_permission_auditor import audit_mcp_config
+                    perm_result = audit_mcp_config(file_path)
+                    for t in perm_result.to_threat_strings():
+                        scan_res.add_threat(t)
         else:
             # If the format is unknown to any engine at all.
             # We add INFO, but DO NOT call add_threat(),
@@ -346,6 +381,11 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
         if reader:
             file_info = reader.read_metadata(file_path)
             scan_res.file_format = file_info.get("format")
+            
+            # Extract technical metadata for Annex IV
+            scan_res.tensor_count = file_info.get("tensor_count", 0)
+            scan_res.extracted_metadata = file_info.get("metadata", {})
+            
             if "error" in file_info:
                 scan_res.add_threat(f"MEDIUM: Metadata parse error: {file_info['error']}")
             else:
@@ -448,9 +488,17 @@ def _run_scan_process(
             remote_data = remote_cache_results[file_hash]
             res = ScanResult(file_path=str(f), status=remote_data["status"], file_hash=file_hash)
             res.threats = remote_data["threats"]
+
+            reader = get_reader_for_file(Path(f))
+            if reader:
+                file_info = reader.read_metadata(Path(f))
+                res.file_format = file_info.get("format")
+                res.tensor_count = file_info.get("tensor_count", 0)
+                res.extracted_metadata = file_info.get("metadata", {})
+                res.detected_license = file_info.get("metadata", {}).get("license")
+                
             results.append(res) 
         else:
-            # The server does not know, we send it to the worker for a full scan.
             tasks.append((str(f), config, repo, ignore_license, full_scan, False, file_hash))
 
     # 3. Execute
@@ -492,7 +540,10 @@ def _run_scan_process(
     finally:
         try:
             if executor is not None:
-                executor.shutdown(wait=False, cancel_futures=True)
+                if sys.version_info >= (3, 9):
+                    executor.shutdown(wait=False, cancel_futures=True)
+                else:
+                    executor.shutdown(wait=False)
         finally:
             hash_cache.close()
         
@@ -516,6 +567,11 @@ def scan(
     html_output: bool = typer.Option(False, "--html", help="Generate a beautiful HTML report"),
     excel_output: bool = typer.Option(False, "--excel", help="Generate an Excel report for auditors (.xlsx)"),
     output_file: Optional[str] = typer.Option(None, "--output-file", "-o", help="Save machine-readable output (JSON/SARIF/SBOM) to a file instead of stdout"),
+    compliance: Optional[str] = typer.Option(None, "--compliance", help="Generate EU AI Act compliance gap report. Value: 'eu-ai-act'"),
+    baseline: bool = typer.Option(False, "--baseline", help="Compare against previous scan and show ONLY new threats"),
+    sync_policy: bool = typer.Option(False, "--sync-policy", help="Upload local veritensor.yaml to the Control Plane"),
+    watch: bool = typer.Option(False, "--watch", "-w", help="Watch files for changes and scan automatically"),
+
 ):
     """
     Scans models, data, and code for security threats.
@@ -528,6 +584,29 @@ def scan(
     config.report_url = report_to or config.report_url
     config.api_key = api_key or config.api_key
     
+    # --- POLICY AS CODE SYNC ---
+    if sync_policy and config.report_url and config.api_key:
+        policy_path = Path("veritensor.yaml")
+        if policy_path.exists():
+            try:
+                with open(policy_path, "r") as f:
+                    yaml_content = f.read()
+                sync_url = config.report_url.replace("/telemetry", "/policies/sync")
+                res = requests.post(sync_url, headers={"X-API-Key": config.api_key}, json={"yaml_content": yaml_content})
+                if res.status_code == 200:
+                    console.print("[bold green]✅ Policy-as-Code successfully synced to Control Plane.[/bold green]")
+                    # reset the cache and download the config again to apply the new thresholds right now
+                    ConfigLoader.reset()
+                    config = ConfigLoader.load()
+                    config.report_url = report_to or config.report_url
+                    config.api_key = api_key or config.api_key
+                else:
+                    console.print(f"[bold red]❌ Failed to sync policy: {res.text}[/bold red]")
+            except Exception as e:
+                console.print(f"[bold red]❌ Policy sync error: {e}[/bold red]")
+        else:
+            console.print("[yellow]⚠️ --sync-policy used, but veritensor.yaml not found locally.[/yellow]")
+            
     # --- CENTRALIZED POLICY SYNC ---
     server_suppressions =[]
     if config.report_url and config.api_key:
@@ -547,6 +626,64 @@ def scan(
     if not is_machine_output:
         console.print(Panel.fit(f"🛡️  [bold cyan]Veritensor Security Scanner[/bold cyan] v{__version__}", border_style="cyan"))
 
+    if watch:
+        import time
+        console.print("[bold cyan]👀 Veritensor Watcher started. Monitoring files for changes... (Press Ctrl+C to stop)[/bold cyan]")
+        
+        # Collecting the initial file modification dates
+        last_mtimes = {}
+        ignore_patterns = load_ignore_patterns()
+        
+        def get_files():
+            files =[]
+            for path in paths:
+                if path.startswith("s3://"): continue
+                p = Path(path)
+                if p.is_file() and not is_ignored(p, ignore_patterns): files.append(p)
+                elif p.is_dir():
+                    for sub_p in p.rglob("*"):
+                        if sub_p.is_file() and not is_ignored(sub_p, ignore_patterns): files.append(sub_p)
+            return files
+
+        # Initialization
+        for f in get_files():
+            try: last_mtimes[str(f)] = f.stat().st_mtime
+            except: pass
+
+        try:
+            while True:
+                time.sleep(6) # check every 6 seconds
+                changed_files =[]
+                current_files = get_files()
+                
+                for f in current_files:
+                    f_str = str(f)
+                    try:
+                        mtime = f.stat().st_mtime
+                        if f_str not in last_mtimes or mtime > last_mtimes[f_str]:
+                            changed_files.append(f_str)
+                            last_mtimes[f_str] = mtime
+                    except: pass
+                
+                if changed_files:
+                    console.print(f"\n[dim]{datetime.datetime.now().strftime('%H:%M:%S')}[/dim] 🔄 Detected changes in {len(changed_files)} file(s). Scanning...")
+                    #  run the scan only for modified files
+                    watch_results = _run_scan_process(changed_files, repo, jobs, ignore_license, full_scan, config, show_progress=False)
+                    
+                    #  display the results (only if there are threats)
+                    failed =[r for r in watch_results if r.status == "FAIL"]
+                    if failed:
+                        console.print("[bold red]🚨 Threats detected in modified files:[/bold red]")
+                        _print_table(failed)
+                    else:
+                        console.print("[bold green]✅ Modified files are clean.[/bold green]")
+                        
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Watcher stopped.[/yellow]")
+            raise typer.Exit(code=0)
+            
+        return    
+
     try:
         # PASSING paths (list) instead of path (string)
         results = _run_scan_process(paths, repo, jobs, ignore_license, full_scan, config, show_progress=not is_machine_output)
@@ -558,46 +695,103 @@ def scan(
         console.print("[yellow]No files found to scan.[/yellow]")
         raise typer.Exit(code=0)
 
+    
 
-    # 4. Analysis & Reporting
     found_malware = False
     found_license_issue = False
     found_integrity_issue = False
-    filtered_results =[]
+    filtered_results = []
 
     for res in results:
-        # WE FILTER BOTH NOISE AND SERVER EXCEPTIONS.
-        real_threats =[
+        real_threats = [
             t for t in res.threats 
             if not is_noise(t) and not is_suppressed(res.file_path, t, server_suppressions)
         ]
         
-        if res.status == "FAIL":
-            if real_threats:
-                if check_severity(real_threats, config.fail_on_severity):
-                    for t in real_threats:
-                        if "License" in t or "Restricted license" in t: found_license_issue = True
-                        elif "Hash mismatch" in t: found_integrity_issue = True
-                        else: found_malware = True
-            
-            # If all threats were noisy or suppressed by the server -> change the status to PASS
-            if not real_threats:
-                if verbose: 
-                    filtered_results.append(res)
-                else:
-                    clean_res = ScanResult(res.file_path, status="PASS")
-                    filtered_results.append(clean_res)
-            else:
-                # Leave only real threats for withdrawal
-                res.threats = real_threats
-                filtered_results.append(res)
+        blocking_threats = [t for t in real_threats if not t.startswith("INFO:")]
+        
+        if blocking_threats:
+            res.status = "FAIL"
+            res.threats = real_threats
         else:
-            filtered_results.append(res)
+            res.status = "PASS"
+            res.threats = real_threats
+            
+        filtered_results.append(res)
+
+    # 5. FETCH BASELINE (request it BEFORE telemetry so that the server actually sees the LAST scan.)
+    baseline_cache = {}
+    if baseline and config.report_url and config.api_key:
+        if not is_machine_output:
+            console.print("[dim]📉 Fetching baseline...[/dim]")
+        
+        for res in filtered_results:
+            if not res.threats: continue
+            
+            artifact_name = Path(res.file_path).name
+            fingerprint_param = f"?fingerprint={res.file_hash}" if res.file_hash else ""
+            baseline_url = config.report_url.replace("/telemetry", f"/scans/{artifact_name}/baseline{fingerprint_param}")
+            
+            try:
+                b_res = requests.get(baseline_url, headers={"X-API-Key": config.api_key}, timeout=60)
+                if b_res.status_code == 200:
+                    data = b_res.json()
+                    baseline_cache[res.file_path] = {
+                        "invalidated": data.get("message") == "baseline_invalidated",
+                        "old_threats": set(data.get("baseline_threats", []))
+                    }
+            except Exception as e:
+                logger.debug(f"Baseline fetch failed for {artifact_name}: {e}")
+
+    # 6. SENDING TELEMETRY (The server gets the whole truth BEFORE we hide the threats in the console.)
+    if report_to or config.report_url:
+        if not is_machine_output: console.print(f"[dim]📡 Sending telemetry...[/dim]")
+        send_report(filtered_results, config, override_url=report_to, override_key=api_key)
+
+    # 7. APPLY BASELINE (Hiding threats ONLY for console output)
+    if baseline:
+        for res in filtered_results:
+            if res.file_path in baseline_cache:
+                b_data = baseline_cache[res.file_path]
+                
+                if b_data["invalidated"]:
+                    if not is_machine_output:
+                        console.print(f"[bold yellow]⚠️  Baseline invalidated for {Path(res.file_path).name} (File modified!)[/bold yellow]")
+                    continue
+                
+                old_threats = b_data["old_threats"]
+                new_threats = [t for t in res.threats if t not in old_threats]
+                
+                if len(new_threats) < len(res.threats):
+                    diff = len(res.threats) - len(new_threats)
+                    if not is_machine_output:
+                        console.print(f"[dim]  - Hid {diff} legacy threats for {Path(res.file_path).name}[/dim]")
+                
+                res.threats = new_threats
+                if not [t for t in res.threats if not t.startswith("INFO:")]:
+                    res.status = "PASS"
 
     if html_output:
-        report_path = generate_html_report(filtered_results)
+        report_path = generate_html_report(filtered_results, include_compliance=(compliance == "eu-ai-act"))
         if not is_machine_output:
             console.print(f"\n[bold green]✅ HTML Report saved to: {report_path}[/bold green]")        
+
+    if compliance:
+        SUPPORTED_STANDARDS = {"eu-ai-act"}
+        if compliance.lower() not in SUPPORTED_STANDARDS:
+            console.print(f"[bold red]Error:[/bold red] Unknown compliance standard '{compliance}'. Supported: {', '.join(SUPPORTED_STANDARDS)}")
+            raise typer.Exit(code=1)
+
+        if not html_output:
+            compliance_path, compliance_data = generate_compliance_report(filtered_results, standard=compliance, output_path=f"veritensor-{compliance}-report.html")
+            if not is_machine_output:
+                console.print(f"\n[bold green]✅ Compliance Report saved to: {compliance_path}[/bold green]")
+            console.print(format_compliance_table(compliance_data))
+        else:
+            import os
+            _, compliance_data = generate_compliance_report(filtered_results, standard=compliance, output_path=os.devnull)
+            if not is_machine_output:
+                console.print(format_compliance_table(compliance_data))
 
     if excel_output:
         try:
@@ -606,13 +800,6 @@ def scan(
                 console.print(f"\n[bold green]✅ Excel Report saved to: {excel_path}[/bold green]")
         except ImportError as e:
             console.print(f"[bold yellow]⚠️  Excel export requires openpyxl: pip install veritensor[excel][/bold yellow]")
-    # Usage:
-    #   veritensor scan ./models/ --excel
-    #   veritensor scan ./models/ --excel --output-file report.xlsx
-    #
-    # Note: --output-file with --excel saves to the specified path.
-    # To support custom path, replace the generate_excel_report call with:
-    #   excel_path = generate_excel_report(filtered_results, output_path=output_file or "veritensor-report.xlsx")
 
     machine_text = None        
     if sarif_output:
@@ -623,33 +810,35 @@ def scan(
         results_dicts = [r.__dict__ for r in results]
         machine_text = json.dumps(results_dicts, indent=2)
 
-
     if machine_text:
         if output_file:
-
             with open(output_file, "w", encoding="utf-8") as f:
                 f.write(machine_text)
             if not is_machine_output:
                 console.print(f"[bold green]✅ Report saved to: {output_file}[/bold green]")
-            if not is_machine_output:
                 _print_table(filtered_results)
         else:
             print(machine_text)
     else:
         _print_table(filtered_results)
 
-    
-    # Telemetry
-    if report_to or config.report_url:
-        if not is_machine_output: console.print(f"[dim]📡 Sending telemetry...[/dim]")
-        send_report(results, config, override_url=report_to, override_key=api_key)
-
-    # Decision Logic
+    # 8. The final decision (Exit Code)
     exit_code = 0
     sign_status = "clean"
-    block_reasons =[]
+    block_reasons = []
 
-    if found_malware or found_integrity_issue:
+    final_malware = False
+    final_license = False
+    final_integrity = False
+
+    for res in filtered_results:
+        if res.status == "FAIL":
+            for t in res.threats:
+                if "License" in t or "Restricted license" in t: final_license = True
+                elif "Hash mismatch" in t: final_integrity = True
+                else: final_malware = True
+
+    if final_malware or final_integrity:
         if ignore_malware:
             if not is_machine_output: console.print("\n[bold yellow]⚠️  SECURITY RISKS DETECTED (Ignored by user)[/bold yellow]")
             sign_status = "forced_approval"
@@ -657,7 +846,7 @@ def scan(
             block_reasons.append("Malware/Secrets/Integrity")
             exit_code = 1
 
-    if found_license_issue:
+    if final_license:
         if ignore_license:
             if not is_machine_output: console.print("\n[bold yellow]⚠️  LICENSE RISKS DETECTED (Ignored by user)[/bold yellow]")
             if sign_status == "clean": sign_status = "forced_approval"
@@ -683,6 +872,7 @@ def scan(
     if image:
         scan_timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
         _perform_signing(image, sign_status, config, scan_timestamp, results)
+
 
 @app.command()
 def manifest(
@@ -753,7 +943,7 @@ def update():
     target_file = target_dir / "signatures.yaml"
     console.print(f"⬇️  Checking for updates...")
     try:
-        response = requests.get(SIG_URL, timeout=10)
+        response = requests.get(SIG_URL, timeout=60)
         response.raise_for_status()
         import yaml
         if "unsafe_globals" not in yaml.safe_load(response.text): raise ValueError("Invalid format")
