@@ -142,24 +142,26 @@ def scan_dataset(file_path: Path, full_scan: bool = False, bias_profile: Optiona
             text_stream = _stream_csv(file_path)
             
         elif ext in {".jsonl", ".ndjson", ".ldjson"}:
-            # JSONL logic remains the same (we don't do bias math on JSONL for now)
-            def _single_pass_jsonl(filepath):
-                json_keys = set()
-                with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+            # First pass - collect column keys from the first 10 lines safely
+            json_keys = set()
+            try:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     for i, line in enumerate(f):
-                        if not line: break
-                        if len(line) > MAX_JSON_LINE_SIZE: continue
+                        if i >= 10: break
+                        if not line or len(line) > MAX_JSON_LINE_SIZE: continue
                         try:
                             data = json.loads(line)
-                            if i < 10 and isinstance(data, dict):
+                            if isinstance(data, dict):
                                 json_keys.update(data.keys())
-                            strings = list(_extract_strings_from_json(data))
-                            if strings: yield " ".join(strings)
                         except json.JSONDecodeError: pass
-                if json_keys:
-                    threats.extend(_check_toxic_columns(list(json_keys)))
+            except Exception as e:
+                logger.debug(f"Failed to extract JSONL keys: {e}")
 
-            text_stream = _single_pass_jsonl(file_path)
+            if json_keys:
+                threats.extend(_check_toxic_columns(list(json_keys)))
+
+            # Second pass - stream content for threat scanning
+            text_stream = _stream_jsonl(file_path)
         else:
             return [], None
 
@@ -311,6 +313,8 @@ class BiasAggregator:
             self.group_target_counts[g_val_str][t_val_str] = self.group_target_counts[g_val_str].get(t_val_str, 0) + count
 
         # 2. Update Proxy Counts
+        MAX_PROXY_UNIQUE_VALUES = 1000  # FIX: Cap memory usage for proxy correlation tracking
+        
         if self.candidate_cols is None:
             cat_cols = df.select_dtypes(include=['object', 'category', 'bool']).columns.tolist()
             self.candidate_cols = [c for c in cat_cols if c not in protected_attrs_lower and df[c].nunique() < 100]
@@ -332,7 +336,10 @@ class BiasAggregator:
                         if p_val_str not in self.proxy_counts[p_attr][c_col]:
                             self.proxy_counts[p_attr][c_col][p_val_str] = {}
                             
-                        self.proxy_counts[p_attr][c_col][p_val_str][c_val_str] = self.proxy_counts[p_attr][c_col][p_val_str].get(c_val_str, 0) + count
+                        # Apply memory cap
+                        existing = self.proxy_counts[p_attr][c_col][p_val_str]
+                        if len(existing) < MAX_PROXY_UNIQUE_VALUES or c_val_str in existing:
+                            existing[c_val_str] = existing.get(c_val_str, 0) + count
 
     def get_results(self) -> dict:
         return {
