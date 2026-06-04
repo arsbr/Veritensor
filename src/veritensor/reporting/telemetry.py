@@ -11,7 +11,7 @@ from typing import List, Optional
 from veritensor.core.types import ScanResult
 from veritensor.core.config import VeritensorConfig
 from veritensor import __version__
-
+import subprocess
 logger = logging.getLogger(__name__)
 
 def send_report(
@@ -43,6 +43,8 @@ def send_report(
             "total_files": len(results),
             "failed_files": len([r for r in results if r.status == "FAIL"]),
         },
+        "repository": "local-scan",
+        "branch": _get_git_branch(),
         "results": []
     }
 
@@ -55,7 +57,10 @@ def send_report(
             "threats": res.threats,
             "license": res.detected_license,
             "repo_id": res.repo_id,
-            "verified": res.identity_verified
+            "verified": res.identity_verified,
+            "tensor_count": res.tensor_count,
+            "metadata": res.extracted_metadata,
+            "bias_data": getattr(res, 'bias_data', None)
         })
 
     # 3. Send Request
@@ -78,3 +83,10 @@ def send_report(
     except requests.exceptions.RequestException as e:
         # Fail-Open: Network errors should not break the build
         logger.warning(f"Telemetry unreachable: {str(e)}")
+
+def _get_git_branch() -> str:
+    """Attempts to get the current git branch."""
+    try:
+        return subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:
+        return "unknown"
