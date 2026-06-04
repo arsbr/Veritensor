@@ -7,6 +7,7 @@ import json
 import requests
 from pathlib import Path
 from typing import List, Set, Dict, Optional
+from veritensor.core.networking import get_safe_session
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +177,8 @@ def _check_osv_single_batch(packages: Dict[str, str]) -> List[str]:
         return []
         
     try:
-        response = requests.post(OSV_API_URL, json=payload, timeout=5)
+        session = get_safe_session()
+        response = session.post(OSV_API_URL, json=payload, timeout=5)
         
         if response.status_code == 429:
             logger.warning("OSV.dev API rate limit exceeded.")
@@ -249,12 +251,22 @@ def _parse_pyproject(path: Path) -> Dict[str, Optional[str]]:
                     deps[name] = val.get("version") if isinstance(val, dict) else str(val)
             
             # 2. PEP-621 Style
-            project = data.get("project", {})
-            for item in project.get("dependencies", []) + project.get("optional-dependencies", []):
-                if isinstance(item, str):
-                    name = re.split(r'[ ;\[>=<~!]', item)[0]
-                    ver = re.search(r'==([0-9a-zA-Z.-]+)', item)
-                    deps[name] = ver.group(1) if ver else None
+            if "project" in data:
+                project = data["project"]
+                
+                # FIX: Correctly flatten optional-dependencies dict into a list of package strings
+                optional_deps_raw = project.get("optional-dependencies", {})
+                all_optional = []
+                if isinstance(optional_deps_raw, dict):
+                    all_optional = [pkg for group in optional_deps_raw.values() for pkg in group]
+                elif isinstance(optional_deps_raw, list):
+                    all_optional = optional_deps_raw
+                
+                for item in project.get("dependencies", []) + all_optional:
+                    if isinstance(item, str):
+                        name = re.split(r'[ ;\[>=<~!]', item)[0]
+                        ver = re.search(r'==([0-9a-zA-Z.-]+)', item)
+                        deps[name] = ver.group(1) if ver else None
         else:
             # Fallback regex parsing
             content = _safe_read_text(path)
