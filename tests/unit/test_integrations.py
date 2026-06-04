@@ -122,4 +122,4 @@ def test_chroma_guard_malicious(mock_scan):
     with pytest.raises(ChromaError) as exc_info:
         secure_col.add(documents=["My password is 123"], ids=["doc2"])
         
-    assert "Vector DB Firewall Blocked" in str(exc_info.value)
+    assert "Blocked document" in str(exc_info.value)
