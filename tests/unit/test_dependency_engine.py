@@ -50,8 +50,9 @@ version = "1.5.0"
         
     assert any("Potential Typosquatting" in t and "pandas" in t for t in threats)
 
-@patch("requests.post")
-def test_scan_osv_vulnerability(mock_post, tmp_path):
+# Patch our custom get_safe_session instead of requests.post
+@patch("veritensor.engines.static.dependency_engine.get_safe_session")
+def test_scan_osv_vulnerability(mock_get_session, tmp_path):
     """
     Tests that vulnerabilities from OSV.dev are correctly reported.
     Matches the specific message format of the new engine.
@@ -59,7 +60,8 @@ def test_scan_osv_vulnerability(mock_post, tmp_path):
     f = tmp_path / "requirements.txt"
     f.write_text("requests==2.19.0\n")
 
-    # Simulate OSV API response
+    # Simulate OSV API response via our safe session
+    mock_session = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
@@ -70,12 +72,12 @@ def test_scan_osv_vulnerability(mock_post, tmp_path):
             }]
         }]
     }
-    mock_post.return_value = mock_response
+    mock_session.post.return_value = mock_response
+    mock_get_session.return_value = mock_session
 
     threats = scan_dependencies(f)
     
-    assert mock_post.called
-    # Note: Updated to match "Vulnerability in..." string from latest engine
+    assert mock_session.post.called
     assert any("Vulnerability in requests==2.19.0" in t for t in threats)
     assert any("GHSA-m8th-934p-w6h3" in t for t in threats)
 
@@ -96,13 +98,16 @@ def test_scan_pipfile_lock_parsing(tmp_path):
         
     assert any("Known malicious" in t and "tourch" in t for t in threats)
 
-@patch("requests.post")
-def test_scan_osv_offline_graceful(mock_post, tmp_path):
+# Patch get_safe_session
+@patch("veritensor.engines.static.dependency_engine.get_safe_session")
+def test_scan_osv_offline_graceful(mock_get_session, tmp_path):
     """Ensures scanner doesn't crash on network failure."""
     f = tmp_path / "requirements.txt"
     f.write_text("requests==2.19.0\n")
 
-    mock_post.side_effect = Exception("Network unreachable")
+    mock_session = MagicMock()
+    mock_session.post.side_effect = Exception("Network unreachable")
+    mock_get_session.return_value = mock_session
 
     threats = scan_dependencies(f)
     assert isinstance(threats, list)
