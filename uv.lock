@@ -2573,7 +2573,11 @@ dependencies = [
     { name = "huggingface-hub" },
     { name = "jinja2" },
     { name = "lxml" },
+    { name = "openpyxl" },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pandas", version = "3.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pillow" },
+    { name = "pyarrow" },
     { name = "pyyaml" },
     { name = "requests" },
     { name = "rich" },
@@ -2584,11 +2588,7 @@ dependencies = [
 [package.optional-dependencies]
 all = [
     { name = "boto3" },
-    { name = "openpyxl" },
-    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "pandas", version = "3.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "presidio-analyzer" },
-    { name = "pyarrow" },
     { name = "pypdf" },
     { name = "python-docx" },
     { name = "python-pptx" },
@@ -2597,12 +2597,6 @@ all = [
 aws = [
     { name = "boto3" },
 ]
-data = [
-    { name = "openpyxl" },
-    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "pandas", version = "3.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "pyarrow" },
-]
 dev = [
     { name = "anyio" },
     { name = "black" },
@@ -2610,11 +2604,7 @@ dev = [
     { name = "coverage" },
     { name = "fickling" },
     { name = "isort" },
-    { name = "openpyxl" },
-    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "pandas", version = "3.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "presidio-analyzer" },
-    { name = "pyarrow" },
     { name = "pypdf" },
     { name = "pytest" },
     { name = "pytest-mock" },
@@ -2656,11 +2646,11 @@ requires-dist = [
     { name = "isort", marker = "extra == 'dev'" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "lxml", specifier = ">=6.1.0" },
-    { name = "openpyxl", marker = "extra == 'data'", specifier = ">=3.1.0" },
-    { name = "pandas", marker = "extra == 'data'", specifier = ">=2.0.0" },
+    { name = "openpyxl", specifier = ">=3.1.0" },
+    { name = "pandas", specifier = ">=2.0.0" },
     { name = "pillow", specifier = ">=12.2.0" },
     { name = "presidio-analyzer", marker = "extra == 'pii'", specifier = ">=2.2.0" },
-    { name = "pyarrow", marker = "extra == 'data'", specifier = ">=14.0.0" },
+    { name = "pyarrow", specifier = ">=14.0.0" },
     { name = "pypdf", marker = "extra == 'rag'", specifier = ">=4.0.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=7.0.0" },
     { name = "pytest-mock", marker = "extra == 'test'", specifier = ">=3.10.0" },
@@ -2677,7 +2667,7 @@ requires-dist = [
     { name = "veritensor", extras = ["aws", "data", "rag", "pii"], marker = "extra == 'all'" },
     { name = "veritensor", extras = ["pii"], marker = "extra == 'rag'" },
 ]
-provides-extras = ["test", "pii", "rag", "aws", "data", "all", "dev"]
+provides-extras = ["test", "pii", "rag", "aws", "all", "dev"]
 
 [[package]]
 name = "wasabi"
