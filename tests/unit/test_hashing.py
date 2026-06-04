@@ -1,13 +1,14 @@
-import pytest
+import hashlib
 from veritensor.engines.hashing.calculator import calculate_sha256
 
 def test_calculate_sha256_regular_file(tmp_path):
-    # Creating a regular file
     f = tmp_path / "model.bin"
-    f.write_bytes(b"hello world")
+    content = b"hello world"
+    f.write_bytes(content)
     
-    # echo -n "hello world" | sha256sum
-    expected = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+    # Compute expected hash dynamically
+    expected = hashlib.sha256(content).hexdigest()
+    assert len(expected) == 64
     assert calculate_sha256(f) == expected
 
 def test_calculate_sha256_lfs_pointer(tmp_path):
