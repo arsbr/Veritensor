@@ -36,7 +36,7 @@ class PIIScanner:
                     logger.info(f"Downloading lightweight PII model ({model_name})...")
                     spacy_download(model_name)
 
-                # Правильная инициализация для новых версий Presidio
+                # Proper initialization for new versions of Presidio
                 configuration = {
                     "nlp_engine_name": "spacy",
                     "models":[{"lang_code": "en", "model_name": model_name}],
