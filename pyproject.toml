@@ -38,6 +38,9 @@ dependencies = [
     "urllib3 >= 2.7.0",
     # Fickling removed from here to avoid installing PyTorch (800MB+) for regular users
     "gitpython>=3.1.49",
+    "pyarrow>=14.0.0",
+    "pandas>=2.0.0",
+    "openpyxl>=3.1.0",
 ]
 
 
@@ -69,12 +72,6 @@ rag = [
 # AWS Support (S3 scanning)
 aws = [
     "boto3>=1.28.0"
-]
-
-data = [
-    "pyarrow>=14.0.0",
-    "pandas>=2.0.0",
-    "openpyxl>=3.1.0"
 ]
 
 all = [
