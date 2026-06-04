@@ -148,18 +148,10 @@ class S3Stream(io.IOBase):
 
     def _fetch_size(self) -> int:
         try:
-            headers = {"Range": "bytes=0-0"}
-            safe_sess = get_safe_session()
-            resp = safe_sess.get(self.url, headers=headers, stream=True, timeout=10)
-            resp.raise_for_status()
-            content_range = resp.headers.get("Content-Range")
-            if content_range and "/" in content_range:
-                return int(content_range.split("/")[-1])
-            if "Content-Length" in resp.headers:
-                return int(resp.headers["Content-Length"])
-            return 0
+            response = self.s3.head_object(Bucket=self.bucket, Key=self.key)
+            return response['ContentLength']
         except Exception as e:
-            logger.error(f"Failed to fetch size for {self.url}: {e}")
+            logger.error(f"Failed to fetch size for s3://{self.bucket}/{self.key}: {e}")
             raise
 
     def read(self, size: int = -1) -> bytes:
@@ -173,20 +165,17 @@ class S3Stream(io.IOBase):
 
         if end < self.pos: return b""
 
-        headers = {"Range": f"bytes={self.pos}-{end}"}
+        range_header = f"bytes={self.pos}-{end}"
         try:
-            # Use safe session for reading data
-            from veritensor.core.networking import get_safe_session
-            safe_sess = get_safe_session()
-            
-            resp = safe_sess.get(self.url, headers=headers, timeout=30)
-            resp.raise_for_status()
-            data = resp.content
+            # Use boto3 get_object instead of requests
+            resp = self.s3.get_object(Bucket=self.bucket, Key=self.key, Range=range_header)
+            data = resp["Body"].read()
             self.pos += len(data)
             return data
         except Exception as e:
-            logger.error(f"Read error at offset {self.pos}: {e}")
+            logger.error(f"S3 Read error at offset {self.pos}: {e}")
             raise
+
 
     def seek(self, offset: int, whence: int = 0) -> int:
         if self._closed: raise ValueError("I/O operation on closed file.")
