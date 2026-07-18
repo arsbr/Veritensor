@@ -75,31 +75,37 @@ class SignatureLoader:
     2. Package Defaults (src/.../signatures.yaml) - Bundled with the app
     3. Hardcoded Fallback - If files are missing
     """
-    _instance = None
-    _globals = DEFAULT_UNSAFE_GLOBALS
-    _suspicious = DEFAULT_SUSPICIOUS_STRINGS
-    _injections = DEFAULT_PROMPT_INJECTIONS
+    _instance: Optional['SignatureLoader'] = None
     
+    def __init__(self):
+        # Initialize with defaults as instance attributes
+        self._globals: Dict[str, Dict[str, Any]] = DEFAULT_UNSAFE_GLOBALS
+        self._suspicious: List[str] = DEFAULT_SUSPICIOUS_STRINGS
+        self._injections: List[str] = DEFAULT_PROMPT_INJECTIONS
+
     @classmethod
-    def get_globals(cls) -> Dict[str, Dict[str, Any]]:
+    def _get_instance(cls) -> 'SignatureLoader':
         if cls._instance is None:
             cls._instance = cls()
             cls._instance._load()
-        return cls._instance._globals
+        return cls._instance
+
+    @classmethod
+    def get_globals(cls) -> Dict[str, Dict[str, Any]]:
+        return cls._get_instance()._globals
 
     @classmethod
     def get_suspicious_strings(cls) -> List[str]:
-        if cls._instance is None:
-            cls._instance = cls()
-            cls._instance._load()
-        return cls._instance._suspicious
+        return cls._get_instance()._suspicious
     
     @classmethod
     def get_prompt_injections(cls) -> List[str]:
-        if cls._instance is None:
-            cls._instance = cls()
-            cls._instance._load()
-        return cls._instance._injections
+        return cls._get_instance()._injections
+
+    @classmethod
+    def reset(cls):
+        """For testing isolation."""
+        cls._instance = None
 
     
     def _load(self):
