@@ -131,7 +131,6 @@ _SEVERITY_MAP = {
 # Human-in-the-loop parameter names that indicate the tool has a confirmation gate
 _HITL_PARAM_NAMES = frozenset({"confirm", "approved", "dry_run", "dryrun", "force"})
 
-_STDLIB_ENTRYPOINTS = frozenset({"main", "__main__", "cli", "run", "start", "app"})
 # ---------------------------------------------------------------------------
 # Result types
 # ---------------------------------------------------------------------------
@@ -216,13 +215,22 @@ class _MCPToolVisitor(ast.NodeVisitor):
 
     
     def _is_mcp_tool(self, node: ast.FunctionDef) -> bool:
-        if node.name.lower() in _STDLIB_ENTRYPOINTS:
-            return False
+         # Check decorator FIRST. If @tool is present, scan regardless of name.
+        has_mcp_decorator = False
         for dec in node.decorator_list:
             name = _decorator_base_name(dec)
             if name and name.lower() in _MCP_TOOL_DECORATORS:
-                return True
-        return False
+                has_mcp_decorator = True
+                break
+        
+        if not has_mcp_decorator:
+            return False
+        
+        # Only skip dunder names (e.g., __init__) — they are never MCP tools
+        if node.name.startswith("__") and node.name.endswith("__"):
+            return False
+        
+        return True
 
     def _has_hitl_param(self, node: ast.FunctionDef) -> bool:
         params = {arg.arg.lower() for arg in node.args.args}
