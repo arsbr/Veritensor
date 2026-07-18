@@ -1,6 +1,6 @@
 # Copyright 2026 Veritensor Security Apache 2.0
 # Dataset Scanner (Parquet, CSV, JSONL) for Data Poisoning, Malicious URLs, and Toxic Columns
-
+import threading
 import logging
 import json
 from pathlib import Path
@@ -31,23 +31,28 @@ FALLBACK_SUSPICIOUS = [
     "regex:(?i)secret"
 ]
 
-# --- CRITICAL FIX: Robust Singleton for GLiNER ---
+# Thread-safe lazy loading for GLiNER
 _GLINER_UNAVAILABLE = object()
 _gliner_model = None
+_gliner_lock = threading.Lock()
 
 def _get_gliner_model():
-    """Lazy loads GLiNER to avoid 30-90s delay on every function call."""
     global _gliner_model
-    if _gliner_model is None:
-        try:
-            from gliner import GLiNER
-            logger.info("Loading GLiNER model for column analysis...")
-            _gliner_model = GLiNER.from_pretrained("urchade/gliner_multi-v2.1")
-        except ImportError:
-            _gliner_model = _GLINER_UNAVAILABLE
-        except Exception as e:
-            logger.warning(f"GLiNER failed to load: {e}. Falling back to regex.")
-            _gliner_model = _GLINER_UNAVAILABLE
+    if _gliner_model is not None:
+        return _gliner_model
+        
+    with _gliner_lock:
+        if _gliner_model is None:  # Double-checked locking
+            try:
+                from gliner import GLiNER
+                logger.info("Loading GLiNER model for column analysis...")
+                _gliner_model = GLiNER.from_pretrained("urchade/gliner_multi-v2.1")
+            except ImportError:
+                _gliner_model = _GLINER_UNAVAILABLE
+            except Exception as e:
+                logger.warning(f"GLiNER failed to load: {e}. Falling back to regex.")
+                _gliner_model = _GLINER_UNAVAILABLE
+                
     return _gliner_model
 
 def _check_toxic_columns(columns: List[str]) -> List[str]:
@@ -60,7 +65,8 @@ def _check_toxic_columns(columns: List[str]) -> List[str]:
         
     toxic_keywords = [
         "social_credit", "political_affiliation", "sexual_orientation", 
-        "race", "religion", "trade_union", "biometric_categorization", "criminal_prediction"
+        "race", "religion", "trade_union", "biometric_categorization", "criminal_prediction",
+        "emotion_state", "sentiment_analysis_workplace", "facial_features", "cctv_face_id", "subliminal_metrics"
     ]
     
     model = _get_gliner_model()
@@ -95,15 +101,19 @@ def scan_dataset(file_path: Path, full_scan: bool = False, bias_profile: Optiona
 
     row_limit = None if full_scan else MAX_ROWS_DEFAULT
     
-    # Initialize Bias Aggregator if profile is provided
-    aggregator = BiasAggregator(bias_profile) if bias_profile else None
+    aggregator = None
+    if bias_profile:
+        try:
+            aggregator = BiasAggregator(bias_profile)
+        except ValueError as e:
+            logger.warning(f"Invalid bias profile for {file_path.name}: {e}")
     
     try:
         text_stream = None
         
         if ext == ".parquet":
             if not PYARROW_AVAILABLE:
-                return ["WARNING: pyarrow not installed. Run 'pip install veritensor[data]'"], None
+                return ["WARNING: pyarrow and pandas are required for local parquet scanning. Run 'pip install pyarrow pandas' or use the Enterprise Server."], None
             
             try:
                 parquet_file = pq.ParquetFile(file_path)
@@ -268,9 +278,16 @@ def _extract_strings_from_json(data: Any) -> Generator[str, None, None]:
 class BiasAggregator:
     """Aggregates counts for fairness metrics using O(1) memory. Safe for multiprocessing (no lambdas)."""
     def __init__(self, profile: dict):
-        self.protected_attrs = profile.get("protected_attributes", [])
+        # Validate required fields to prevent AttributeError during processing
         self.target_var = profile.get("target_variable")
-        self.favorable_label = str(profile.get("favorable_label"))
+        if not self.target_var:
+            raise ValueError("BiasAggregator requires 'target_variable' in bias profile")
+            
+        self.protected_attrs = profile.get("protected_attributes", [])
+        if not self.protected_attrs:
+            raise ValueError("BiasAggregator requires 'protected_attributes' in bias profile")
+            
+        self.favorable_label = str(profile.get("favorable_label", "1"))
         
         self.group_target_counts = {}
         self.proxy_counts = {}
