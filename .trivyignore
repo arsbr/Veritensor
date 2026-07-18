@@ -15,3 +15,24 @@ CVE-2026-39883
 # Accepted Risk: DoS via crafted JWE. Cosign only processes our own trusted signatures in CI/CD.
 CVE-2026-34986
 CVE-2026-29181
+
+# --- Cosign Go Binary False Positives ---
+# Justification: Veritensor uses the cosign binary strictly as a local CLI tool 
+# for signing artifacts with local PEM keys (--key flag). 
+# We do not expose SSH servers, parse untrusted HTML, or use Keyless (Fulcio/Rekor) infrastructure. 
+# These CVEs are present in the compiled binary dependencies but are NOT exploitable in our execution context.
+CVE-2026-49478
+CVE-2026-48702
+CVE-2026-39828
+CVE-2026-39829
+CVE-2026-39830
+CVE-2026-39831
+CVE-2026-39832
+CVE-2026-39835
+CVE-2026-42588
+CVE-2026-46595
+CVE-2026-46597
+CVE-2026-25681
+CVE-2026-27136
+CVE-2026-33814
+CVE-2026-39821
