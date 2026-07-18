@@ -20,7 +20,11 @@ try:
     # Python 3.11+ native TOML support
     import tomllib
 except ImportError:
-    tomllib = None
+    try:
+        # Backport for Python 3.10
+        import tomli as tomllib
+    except ImportError:
+        tomllib = None
 
 # --- Known Malware DB (MVP) ---
 KNOWN_MALICIOUS = {
@@ -214,9 +218,15 @@ def _parse_requirements(path: Path) -> Dict[str, Optional[str]]:
             if not line or line.startswith(("#", "-")): 
                 continue
             
+            # Strip inline comments before any further parsing
+            comment_idx = line.find(' #')
+            if comment_idx != -1:
+                line = line[:comment_idx].strip()
+            if not line:
+                continue
+            
             # Processing direct links (git+, http) with #egg=
             if "egg=" in line:
-                # Пример: git+https://github.com/user/repo.git#egg=evil_pkg
                 name_part = line.split("egg=")[-1].split("&")[0].strip()
                 deps[name_part] = None
                 continue
@@ -234,6 +244,7 @@ def _parse_requirements(path: Path) -> Dict[str, Optional[str]]:
     except Exception:
         pass
     return deps
+
 
 
 def _parse_pyproject(path: Path) -> Dict[str, Optional[str]]:
