@@ -10,6 +10,8 @@ import re
 from veritensor.core.entropy import is_high_entropy
 from veritensor.engines.static.rules import get_severity, SignatureLoader, is_match
 from veritensor.engines.content.pii import PIIScanner  
+import tokenize
+import io as _io
 
 logger = logging.getLogger(__name__)
 
@@ -140,15 +142,21 @@ def _clean_magics(source: str) -> str:
     return "\n".join(lines)
 
 def _check_nesting_level(code: str, max_depth: int = 100) -> bool:
-    # Protection against AST Bomb (Stack Overflow)
+    """Check bracket depth, ignoring content inside string literals."""
     depth = 0
-    for char in code:
-        if char in "([{":
-            depth += 1
-            if depth > max_depth:
-                return False
-        elif char in ")]}":
-            depth -= 1
+    try:
+        tokens = tokenize.generate_tokens(_io.StringIO(code).readline)
+        for tok_type, tok_string, _, _, _ in tokens:
+            if tok_type == tokenize.OP:
+                if tok_string in ('(', '[', '{'):
+                    depth += 1
+                    if depth > max_depth:
+                        return False
+                elif tok_string in (')', ']', '}'):
+                    depth = max(0, depth - 1)
+    except tokenize.TokenError:
+        # Incomplete code (common in notebooks) — allow it to proceed to AST
+        pass
     return True
 
 
