@@ -20,8 +20,11 @@ class HashCache:
         if not self.conn:
             return
         try:
-            cutoff_mtime = time.time() - (days * 86400)
-            self.cursor.execute("DELETE FROM file_cache WHERE mtime < ?", (cutoff_mtime,))
+            cutoff = time.time() - (days * 86400)
+            self.cursor.execute(
+                "DELETE FROM file_cache WHERE COALESCE(last_scanned, mtime) < ?", 
+                (cutoff,)
+            )
             self.conn.commit()
         except Exception as e:
             logger.debug(f"Cache cleanup failed: {e}")
@@ -35,11 +38,9 @@ class HashCache:
             # check_same_thread=False allows using connection across threads.
             # In our multiprocessing architecture, only the MAIN process interacts with this class.
             self.conn = sqlite3.connect(str(CACHE_FILE), check_same_thread=False)
-            
             # Enable WAL mode for better performance and concurrency safety
             self.conn.execute("PRAGMA journal_mode=WAL;")
             self.conn.execute("PRAGMA synchronous=NORMAL;")
-            
             self.cursor = self.conn.cursor()
             
             # Create table
@@ -48,13 +49,23 @@ class HashCache:
                     path TEXT PRIMARY KEY,
                     hash TEXT,
                     size INTEGER,
-                    mtime REAL
+                    mtime REAL,
+                    last_scanned REAL
                 )
             """)
+            
+            # Handle migration for existing DBs
+            try:
+                self.cursor.execute("ALTER TABLE file_cache ADD COLUMN last_scanned REAL")
+                self.conn.commit()
+            except Exception:
+                pass  # Column already exists
+                
             self.conn.commit()
         except Exception as e:
             logger.warning(f"Failed to initialize cache DB: {e}")
             self.conn = None
+
 
     def get(self, file_path: Path) -> Optional[str]:
         """Returns the hash if the file has not been changed."""
@@ -71,15 +82,20 @@ class HashCache:
             row = self.cursor.fetchone()
             
             if row:
-                cached_hash, cached_size, cached_mtime = row
-                # Compare size and mtime (float comparison usually safe for exact system mtime)
+                cached_hash, cached_size, cached_mtime = row[:3]
                 if cached_size == stats.st_size and cached_mtime == stats.st_mtime:
+                    # Update last_scanned on cache hit
+                    self.cursor.execute(
+                        "UPDATE file_cache SET last_scanned = ? WHERE path = ?",
+                        (time.time(), abs_path)
+                    )
+                    self.conn.commit()
                     return cached_hash
             
             return None
         except Exception:
-            # If file not found or permission error during stat
             return None
+
 
     def set(self, file_path: Path, file_hash: str):
         """Saves or updates the hash in the cache."""
@@ -90,9 +106,9 @@ class HashCache:
             stats = file_path.stat()
             
             self.cursor.execute("""
-                INSERT OR REPLACE INTO file_cache (path, hash, size, mtime)
-                VALUES (?, ?, ?, ?)
-            """, (abs_path, file_hash, stats.st_size, stats.st_mtime))
+                INSERT OR REPLACE INTO file_cache (path, hash, size, mtime, last_scanned)
+                VALUES (?, ?, ?, ?, ?)
+            """, (abs_path, file_hash, stats.st_size, stats.st_mtime, time.time()))
             
             self.conn.commit()
         except Exception as e:
