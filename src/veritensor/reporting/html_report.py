@@ -21,7 +21,29 @@ HTML_TEMPLATE = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Veritensor Security Report</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Graceful fallback for Air-Gapped environments -->
+    <script>
+    (function() {
+        var s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+        s.onerror = function() {
+            console.warn("Chart.js failed to load. Running in offline/air-gapped mode.");
+            document.addEventListener("DOMContentLoaded", function() {
+                var donutParent = document.getElementById('donutChart');
+                if (donutParent && donutParent.parentElement) {
+                    donutParent.parentElement.innerHTML = '<p style="color:#888;text-align:center;padding:20px;border:1px dashed #ccc;border-radius:8px;">Charts unavailable<br><small>(Offline mode)</small></p>';
+                }
+                var sevParent = document.getElementById('sevChart');
+                if (sevParent && sevParent.parentElement) {
+                    sevParent.parentElement.innerHTML = '';
+                }
+            });
+        };
+        document.head.appendChild(s);
+    })();
+    </script>
+    
     <style>
         :root {
             --primary: #2c3e50;
@@ -95,31 +117,27 @@ HTML_TEMPLATE = """
 
         /* Print */
          @media print {
-            @page { margin: 1cm; } /* Задаем жесткие поля для бумаги A4 */
+            @page { margin: 1cm; }
             body { 
                 background: white; 
                 padding: 0; 
-                -webkit-print-color-adjust: exact; /* Заставляет браузер печатать цвета фонов (красный/зеленый) */
+                -webkit-print-color-adjust: exact; 
                 print-color-adjust: exact; 
             }
             .container { box-shadow: none; max-width: 100%; padding: 0; margin: 0; border: none; }
             .btn, .search-box, .copy-hint { display: none !important; }
             
-            /* Фиксим графики: выстраиваем их друг под другом, чтобы не сплющивались */
             .charts-row { display: block; page-break-inside: avoid; }
             .chart-wrap { width: 40%; margin: 0 auto 20px auto; }
             .chart-bar-wrap { width: 100%; margin-bottom: 20px; }
             
-            /* Фиксим карточки: используем Grid вместо Flexbox для печати */
             .summary-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
             .card { padding: 10px; }
             
-            /* Фиксим таблицу: заставляем длинные слова переноситься */
             table { table-layout: fixed; width: 100%; }
             th, td { word-wrap: break-word; overflow-wrap: break-word; }
             tr { page-break-inside: avoid; }
             
-            /* Фиксим список угроз */
             .threat-item { page-break-inside: avoid; border: 1px solid #ffcccc; }
             .threat-item.mcp { border: 1px solid #e0ccff; }
         }
@@ -332,11 +350,11 @@ function filterTable() {
 
 // ── Copy to clipboard (UPDATED FOR JIRA) ────────────────────
 function copyThreat(el) {
-    // Извлекаем данные из безопасных data-атрибутов
+  
     const fileName = el.getAttribute('data-file');
     const threatText = el.getAttribute('data-threat');
     
-    // Форматируем текст идеально для вставки в Jira/Slack
+    
     const textToCopy = `File: ${fileName}\nThreat: ${threatText}`;
     
     navigator.clipboard.writeText(textToCopy).then(() => {
