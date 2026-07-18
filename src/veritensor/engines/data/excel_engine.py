@@ -24,7 +24,7 @@ FORMULA_PREFIXES = ('=', '+', '-', '@')
 def scan_excel(file_path: Path) -> List[str]:
     threats = []
     if not EXCEL_AVAILABLE:
-        return ["WARNING: openpyxl not installed. Run 'pip install veritensor[data]'"]
+        return ["WARNING: openpyxl is required for local Excel scanning. Run 'pip install openpyxl' or use the Enterprise Server."]
 
     try:
         # read_only=True is faster and uses less memory
