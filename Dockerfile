@@ -13,12 +13,11 @@ RUN go install github.com/sigstore/cosign/v2/cmd/cosign@latest
 # ==========================================
 FROM python:3.11-slim-bookworm
 
-
 RUN apt-get update && apt-get upgrade -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/sigstore/cosign/cosign:v2.4.0 /ko-app/cosign /usr/local/bin/cosign
+COPY --from=cosign-builder /go/bin/cosign /usr/local/bin/cosign
 
 # --- Install Veritensor ---
 WORKDIR /app
