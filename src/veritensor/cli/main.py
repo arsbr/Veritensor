@@ -11,6 +11,7 @@ import os
 import datetime
 import time
 import requests
+import copy
 import fnmatch
 import concurrent.futures
 import multiprocessing
@@ -204,7 +205,8 @@ def is_suppressed(file_path: str, threat_msg: str, suppressions: List[dict]) -> 
         if not supp_path or not supp_type:
             continue
         file_name = Path(file_path).name
-        if file_name == supp_path and supp_type in threat_msg:
+        supp_name = Path(supp_path).name
+        if file_name == supp_name and supp_type in threat_msg:
             return True
     return False
 
@@ -238,6 +240,16 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
     filename_lower = file_name.lower()
     scan_res = ScanResult(file_path=file_path_str)
     scan_res.repo_id = repo 
+
+    # Check MCP config files early, before extension-based routing swallows .json files
+    if file_path and ext == ".json" and not is_s3:
+        try:
+            if is_mcp_config_file(file_path):
+                perm_result = audit_mcp_config(file_path)
+                for t in perm_result.to_threat_strings():
+                    scan_res.add_threat(t)
+        except Exception as e:
+            logger.debug(f"MCP Audit failed for {file_name}: {e}")
 
     # --- HYBRID ROUTING (Sending heavy files to the server) ---
     # If the user has an Enterprise server connected
@@ -360,12 +372,7 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
                 if mcp_result.mcp_tools_found:
                     for t in mcp_result.to_threat_strings():
                         scan_res.add_threat(t)
-            elif ext == ".json" and file_path:
-                if is_mcp_config_file(file_path):
-                    from veritensor.engines.static.mcp_permission_auditor import audit_mcp_config
-                    perm_result = audit_mcp_config(file_path)
-                    for t in perm_result.to_threat_strings():
-                        scan_res.add_threat(t)
+          
         else:
             # If the format is unknown to any engine at all.
             # We add INFO, but DO NOT call add_threat(),
@@ -378,11 +385,6 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
         scan_res.add_threat(f"WARNING: OS error reading file '{file_name}': {e}")
     except Exception as e:
         scan_res.add_threat(f"CRITICAL: Engine Error: {str(e)}")
-
-    # --- MERGE REMOTE THREATS ---
-    for t in remote_threats:
-        if t not in scan_res.threats:
-            scan_res.add_threat(t)
 
     # --- C. License Check ---
     if not is_s3 and file_path:
@@ -414,6 +416,11 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
 
     return scan_res
 
+def _worker_initializer():
+    """Pre-load spaCy model once per worker process to avoid RAM spikes during scans."""
+    from veritensor.engines.content.pii import PIIScanner
+    PIIScanner.get_engine()
+    
 # --- SHARED SCAN LOGIC ---
 def _run_scan_process(
     paths: List[str], repo: Optional[str], jobs: Optional[int], 
@@ -527,7 +534,10 @@ def _run_scan_process(
         ) as progress:
             
             main_task = progress.add_task("Scanning...", total=len(tasks))
-            executor = concurrent.futures.ProcessPoolExecutor(max_workers=jobs)
+            executor = concurrent.futures.ProcessPoolExecutor(
+                max_workers=jobs,
+                initializer=_worker_initializer
+            )
             
             future_to_file = {
                 executor.submit(scan_worker, task_args): task_args[0] 
@@ -583,14 +593,14 @@ def scan(
     watch: bool = typer.Option(False, "--watch", "-w", help="Watch files for changes and scan automatically"),
 
 ):
-    """
-    Scans models, data, and code for security threats.
-    """
-    config = ConfigLoader.load()
+    """Scans models, data, and code for security threats."""
+    # Work on a shallow copy to prevent mutating the singleton between runs
+    base_config = ConfigLoader.load()
+    config = copy.copy(base_config)
+    
     if verbose: logger.setLevel(logging.DEBUG)
     is_machine_output = (json_output or sarif_output or sbom_output) and not output_file
     
-    # Passing the flags from the console to the global config object
     config.report_url = report_to or config.report_url
     config.api_key = api_key or config.api_key
     
@@ -637,7 +647,6 @@ def scan(
         console.print(Panel.fit(f"🛡️  [bold cyan]Veritensor Security Scanner[/bold cyan] v{__version__}", border_style="cyan"))
 
     if watch:
-        import time
         console.print("[bold cyan]👀 Veritensor Watcher started. Monitoring files for changes... (Press Ctrl+C to stop)[/bold cyan]")
         
         # Collecting the initial file modification dates
@@ -921,7 +930,10 @@ def _print_table(results: List[ScanResult]):
         else:
             unique_threats = list(dict.fromkeys(res.threats))
             display_threats = "\n".join(unique_threats)
-        table.add_row(res.file_path.split("/")[-1], f"[{status_style}]{res.status}[/{status_style}]", display_threats)
+            
+        # Use Path.name for cross-platform compatibility
+        file_name = Path(res.file_path).name if res.file_path else "unknown"
+        table.add_row(file_name, f"[{status_style}]{res.status}[/{status_style}]", display_threats)
     console.print(table)
 
 def _perform_signing(image: str, status: str, config, timestamp: str, results: List[ScanResult]):
