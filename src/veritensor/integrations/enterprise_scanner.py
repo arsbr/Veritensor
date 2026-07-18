@@ -42,28 +42,47 @@ class EnterpriseScanner:
         fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix=f"chunk_{chunk_count}_{file_path.name}_")
         f = os.fdopen(fd, 'w', encoding='utf-8', errors='ignore')
 
-        for line in stream:
-            if line:
-                f.write(line + "\n")
-                current_lines += 1
+        try:
+            for line in stream:
+                if line:
+                    f.write(line + "\n")
+                    current_lines += 1
 
-            if current_lines >= chunk_size:
-                f.close()
+                if current_lines >= chunk_size:
+                    f.close()
+                    yield temp_path
+
+                    if not full_scan:
+                        temp_path = None
+                        return
+
+                    chunk_count += 1
+                    current_lines = 0
+                    fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix=f"chunk_{chunk_count}_{file_path.name}_")
+                    f = os.fdopen(fd, 'w', encoding='utf-8', errors='ignore')
+
+            f.close()
+            f = None
+            if current_lines > 0:
                 yield temp_path
+                temp_path = None
+            else:
+                os.remove(temp_path)
+                temp_path = None
 
-                if not full_scan:
-                    return
-
-                chunk_count += 1
-                current_lines = 0
-                fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix=f"chunk_{chunk_count}_{file_path.name}_")
-                f = os.fdopen(fd, 'w', encoding='utf-8', errors='ignore')
-
-        f.close()
-        if current_lines > 0:
-            yield temp_path
-        else:
-            os.remove(temp_path)
+        except (GeneratorExit, Exception):
+            # Guaranteed cleanup on any exit path (e.g., network disconnect)
+            try:
+                if f and not f.closed:
+                    f.close()
+            except Exception:
+                pass
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
+            raise
 
 
     def _scan_single_file(self, file_to_upload: str, original_name: str) -> List[str]:
