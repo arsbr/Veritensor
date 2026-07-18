@@ -29,7 +29,7 @@ class RemoteStream(io.IOBase):
     def __init__(self, url: str, session: Optional[requests.Session] = None):
         self._validate_url(url)
         self.url = url
-        self.session = session or requests.Session()
+        self._session = session or get_safe_session(self.url)
         self.pos = 0
         self.size = self._fetch_size()
         self._closed = False
@@ -60,10 +60,9 @@ class RemoteStream(io.IOBase):
     def _fetch_size(self) -> int:
         try:
             headers = {"Range": "bytes=0-0"}
-            with get_safe_session(self.url):
-                resp = self.session.get(self.url, headers=headers, stream=True, timeout=10)
-                resp.raise_for_status()
-            
+            resp = self._session.get(self.url, headers=headers, stream=True, timeout=10)
+            resp.raise_for_status()
+                
             content_range = resp.headers.get("Content-Range")
             if content_range and "/" in content_range:
                 return int(content_range.split("/")[-1])
@@ -75,6 +74,7 @@ class RemoteStream(io.IOBase):
         except Exception as e:
             logger.error(f"Failed to fetch size for {self.url}: {e}")
             raise
+
 
     def read(self, size: int = -1) -> bytes:
         if self._closed: raise ValueError("I/O operation on closed file.")
@@ -89,9 +89,9 @@ class RemoteStream(io.IOBase):
 
         headers = {"Range": f"bytes={self.pos}-{end}"}
         try:
-            with get_safe_session(self.url):
-                resp = self.session.get(self.url, headers=headers, timeout=30)
-                resp.raise_for_status()
+            #  Use safe session
+            resp = self._session.get(self.url, headers=headers, timeout=30)
+            resp.raise_for_status()
             data = resp.content
             self.pos += len(data)
             return data
@@ -111,7 +111,12 @@ class RemoteStream(io.IOBase):
     def tell(self) -> int: return self.pos
     def seekable(self) -> bool: return True
     def readable(self) -> bool: return True
-    def close(self): self._closed = True
+    def close(self):
+        # Properly close the session and call super().close()
+        if not self._closed:
+            self._closed = True
+            self._session.close()
+            super().close()
     def __enter__(self): return self
     def __exit__(self, exc_type, exc, tb): self.close()
 
@@ -189,7 +194,11 @@ class S3Stream(io.IOBase):
     def tell(self) -> int: return self.pos
     def seekable(self) -> bool: return True
     def readable(self) -> bool: return True
-    def close(self): self._closed = True
+    def close(self):
+        # Call super().close() to properly update io.IOBase state
+        if not self._closed:
+            self._closed = True
+            super().close()
     def __enter__(self): return self
     def __exit__(self, exc_type, exc, tb): self.close()
 
