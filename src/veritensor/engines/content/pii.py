@@ -19,7 +19,7 @@ class PIIScanner:
         
         if PRESIDIO_AVAILABLE is None:
             try:
-                # CRITICAL FIX: Lazy import inside the method to prevent DLL/OSError crashes on startup
+                # Lazy import inside the method to prevent DLL/OSError crashes on startup
                 from presidio_analyzer import AnalyzerEngine
                 from presidio_analyzer.nlp_engine import NlpEngineProvider
                 import spacy
