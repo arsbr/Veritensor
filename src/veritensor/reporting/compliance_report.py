@@ -114,6 +114,16 @@ _EU_AI_ACT_CONTROLS: List[Dict] = [
     },
 ]
 
+_ARTICLE_WEIGHTS = {
+    "Article 9": 25,   # Risk Management — critical
+    "Article 10": 20,  # Data Governance — high
+    "Article 13": 15,  # Transparency — high
+    "Article 26": 15,  # Deployer obligations — high (MCP/agents)
+    "Article 17": 10,  # Quality Management
+    "Article 53": 10,  # GPAI obligations
+    "Article 11": 5,   # Technical docs — lower weight
+}
+_TOTAL_WEIGHT = sum(_ARTICLE_WEIGHTS.values())  # 100
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -194,17 +204,16 @@ def build_compliance_report(results: List[ScanResult]) -> ComplianceReport:
     all_article_ids = {c["article"] for c in _EU_AI_ACT_CONTROLS}
     clean_controls = sorted(all_article_ids - triggered_articles)
 
-    # Calculate readiness score
-    total_articles = len(all_article_ids)
-    clean_count = len(clean_controls)
-    readiness_score = int((clean_count / total_articles) * 100) if total_articles else 100
-
     # Sort gaps: High Risk first, then by article number
     sorted_gaps = sorted(
         gaps_by_article.values(),
         key=lambda g: (0 if g.eu_risk_level == "High Risk" else 1, g.article)
     )
 
+    # Calculate weighted readiness score instead of flat percentage
+    penalty = sum(_ARTICLE_WEIGHTS.get(gap.article, 10) for gap in sorted_gaps)
+    readiness_score = max(0, 100 - penalty)
+    
     return ComplianceReport(
         scan_date=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         scanner_version=__version__,
