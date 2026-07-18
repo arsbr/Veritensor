@@ -1,4 +1,3 @@
-
 import zipfile
 import logging
 
@@ -32,9 +31,9 @@ class SafeZipReader:
             
             total_size += info.file_size
         
-        # Checking the total size
-        if total_size > SafeZipReader.MAX_UNZIPPED_SIZE:
-            raise ZipBombError(f"Zip Bomb detected! Total unzipped size {total_size} bytes exceeds limit.")
+            # Checking the total size
+            if total_size > SafeZipReader.MAX_UNZIPPED_SIZE:
+                raise ZipBombError(f"Zip Bomb detected! Total unzipped size {total_size} bytes exceeds limit.")
 
     def read(self, zfile: zipfile.ZipFile, name: str) -> bytes:
         info = zfile.getinfo(name)
