@@ -47,6 +47,29 @@ VERITENSOR_RULES = [
         "fullDescription": {"text": "The file hash does not match the official registry (Hugging Face). The file may be corrupted or tampered with."},
         "defaultConfiguration": {"level": "warning"},
         "properties": {"tags": ["security", "integrity", "supply-chain"]}
+    },
+    {
+        "id": "VERITENSOR-005",
+        "name": "MCPAgentHijacking",
+        "shortDescription": {"text": "MCP Agent Tool Security Risk"},
+        "fullDescription": {"text": "An MCP tool exposes dangerous OS/DB/file operations without human-in-the-loop confirmation, enabling prompt injection attacks."},
+        "defaultConfiguration": {"level": "error"},
+        "properties": {"tags": ["security", "mcp", "agent", "prompt-injection"]}
+    },
+    {
+        "id": "VERITENSOR-006",
+        "name": "PIIDataLeak",
+        "shortDescription": {"text": "PII Data Exposure"},
+        "fullDescription": {"text": "Personally Identifiable Information detected in training data or model outputs."},
+        "defaultConfiguration": {"level": "warning"},
+        "properties": {"tags": ["privacy", "pii", "gdpr", "data-governance"]}
+    },
+    {
+        "id": "VERITENSOR-007",
+        "name": "DataPoisoning",
+        "shortDescription": {"text": "Dataset Poisoning / Prompt Injection in Training Data"},
+        "defaultConfiguration": {"level": "error"},
+        "properties": {"tags": ["security", "data-poisoning", "supply-chain"]}
     }
 ]
 
@@ -104,19 +127,17 @@ def generate_sarif_report(scan_results: List[ScanResult], tool_version: str = __
 
 
 def _map_threat_to_rule_id(threat_msg: str) -> str:
-    """
-    Heuristic to map a raw threat string to a SARIF Rule ID.
-    """
     msg_lower = threat_msg.lower()
-
+    if "mcp" in msg_lower or "agent hijacking" in msg_lower:
+        return "VERITENSOR-005"
+    if "pii" in msg_lower or "credit_card" in msg_lower or "email_address" in msg_lower:
+        return "VERITENSOR-006"
+    if "data poisoning" in msg_lower or "prompt injection" in msg_lower:
+        return "VERITENSOR-007"
     if "lambda" in msg_lower and "keras" in msg_lower:
         return "VERITENSOR-003"
-    
-    if "os." in msg_lower or "subprocess" in msg_lower or "eval" in msg_lower or "exec" in msg_lower:
+    if "os." in msg_lower or "subprocess" in msg_lower or "eval" in msg_lower:
         return "VERITENSOR-001"
-    
     if "hash" in msg_lower or "mismatch" in msg_lower:
         return "VERITENSOR-004"
-
-    # Fallback for generic unsafe imports or license issues
     return "VERITENSOR-002"
