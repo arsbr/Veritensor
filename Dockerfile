@@ -1,5 +1,5 @@
 # ==========================================
-# STAGE 1: Builder (Компилируем чистый Cosign)
+# STAGE 1: Builder 
 # ==========================================
 FROM golang:1.26-bookworm AS cosign-builder
 
@@ -18,7 +18,7 @@ RUN apt-get update && apt-get upgrade -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=cosign-builder /go/bin/cosign /usr/local/bin/cosign
+COPY --from=ghcr.io/sigstore/cosign/cosign:v2.4.0 /ko-app/cosign /usr/local/bin/cosign
 
 # --- Install Veritensor ---
 WORKDIR /app
