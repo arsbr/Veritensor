@@ -1,23 +1,9 @@
-# ==========================================
-# STAGE 1: Builder 
-# ==========================================
-FROM golang:1.26-bookworm AS cosign-builder
-
-ENV CGO_ENABLED=0
-ENV GOMAXPROCS=2
-
-RUN go install github.com/sigstore/cosign/v2/cmd/cosign@latest
-
-# ==========================================
-# STAGE 2: Main CLI Image
-# ==========================================
 FROM python:3.11-slim-bookworm
 
+# Security updates and cleanup
 RUN apt-get update && apt-get upgrade -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
-
-COPY --from=cosign-builder /go/bin/cosign /usr/local/bin/cosign
 
 # --- Install Veritensor ---
 WORKDIR /app
