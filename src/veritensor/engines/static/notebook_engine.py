@@ -97,7 +97,7 @@ def scan_notebook(file_path: Path) -> List[str]:
                                     if pat in text_content:
                                         threats.append(f"CRITICAL: Leaked secret detected in Cell {cell_num} Output: '{pat}'")
                         
-                        # 3B. PII check (slow, apply limit to prevent freezing on massive outputs)
+                        # Check PII only in first 10 cells to prevent DoS on large notebooks.
                         if i < PII_OUTPUT_CELL_LIMIT:
                             pii_threats = PIIScanner.scan(text_content)
                             if pii_threats:
@@ -179,12 +179,16 @@ def _scan_ast(code: str, cell_num: int) -> List[str]:
                     module_names = [node.module]
 
                 for mod_name in module_names:
-                    # FIX: Check both with a wildcard (for fully-blocked modules like os/subprocess)
+                    # Check both with a wildcard (for fully-blocked modules like os/subprocess)
                     # AND with specific imported names (for partially-blocked modules like builtins).
                     severity = get_severity(mod_name, "*")
 
+                    if severity is None:
+                        base_mod = mod_name.split(".")[0]
+                        if base_mod != mod_name:
+                            severity = get_severity(base_mod, "*")
+
                     if severity is None and isinstance(node, ast.ImportFrom):
-                        # For "from builtins import eval" — check individual imported names
                         for alias in node.names:
                             severity = get_severity(mod_name, alias.name)
                             if severity:
