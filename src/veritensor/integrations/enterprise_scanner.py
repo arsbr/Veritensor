@@ -16,7 +16,8 @@ logger = logging.getLogger(__name__)
 class EnterpriseScanner:
     def __init__(self, base_url: str, api_key: str):
         #  remove /telemetry from the URL if the user sent it.
-        self.base_url = base_url.replace("/telemetry", "")
+        raw = (base_url or "").rstrip("/")
+        self.base_url = raw.replace("/telemetry", "") if raw.endswith("/telemetry") else raw
         self.headers = {"X-API-Key": api_key}
 
     def _yield_dataset_chunks(self, file_path: Path, chunk_size: int = 10000, full_scan: bool = False) -> Generator[str, None, None]:
@@ -114,10 +115,7 @@ class EnterpriseScanner:
             scan_req.raise_for_status()
             task_id = scan_req.json()["task_id"]
 
-            POLL_INTERVAL_SECONDS = 6
-            MAX_WAIT_SECONDS = int(os.getenv("VERITENSOR_SCAN_TIMEOUT", "600"))  # 10 min default, configurable
-
-            elapsed = 0
+            MAX_WAIT_SECONDS = int(os.getenv("VERITENSOR_SCAN_TIMEOUT", "600"))  # 10 min default, configurable      
 
             interval = 3.0
             max_interval = 30.0
@@ -137,10 +135,10 @@ class EnterpriseScanner:
                     logger.warning(f"Enterprise scan timeout after {elapsed}s.")
                     return (["WARNING: Enterprise scan timed out."] + partial) if partial else ["WARNING: Enterprise scan timed out. No partial results."]
                 
-                # Sleep with jitter to prevent thundering herd
-                sleep_time = interval + random.uniform(0, 1)
-                time.sleep(sleep_time)
-                elapsed += sleep_time
+                # Track elapsed time deterministically without jitter
+                sleep_with_jitter = interval + random.uniform(0, 1)
+                time.sleep(sleep_with_jitter)
+                elapsed += interval  # Advance by base interval only
                 interval = min(interval * 1.5, max_interval)
         
         except Exception as e:
