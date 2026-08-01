@@ -21,7 +21,7 @@ class SafeZipReader:
         total_size = 0
         for info in zfile.infolist():
             # Protection against endless file names
-            target = os.path.normpath(os.path.join("safe_root", info.filename))
+            target = os.path.normpath(os.path.join("safe_root", info.filename.replace('\\', '/')))
             if not target.startswith("safe_root" + os.sep) and target != "safe_root":
                 raise ZipBombError(f"Path traversal detected in ZIP entry: {info.filename}")
 
