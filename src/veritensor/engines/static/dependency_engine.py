@@ -39,6 +39,8 @@ POPULAR_PACKAGES = {
     "transformers", "huggingface-hub", "flask", "django", "fastapi", "boto3"
 }
 
+MAX_REQ_FILE_SIZE = 10 * 1024 * 1024  # 10 MB limit for text-based dependency files
+
 def scan_dependencies(file_path: Path) -> List[str]:
     """
     Scans dependency files for:
@@ -208,8 +210,10 @@ def _check_osv_single_batch(packages: Dict[str, str]) -> List[str]:
         
     return threats
 
-
 def _parse_requirements(path: Path) -> Dict[str, Optional[str]]:
+    if path.stat().st_size > MAX_REQ_FILE_SIZE:
+        logger.warning(f"requirements file too large, skipping: {path}")
+        return {}
     deps = {}
     try:
         content = _safe_read_text(path) 
@@ -219,15 +223,17 @@ def _parse_requirements(path: Path) -> Dict[str, Optional[str]]:
                 continue
             
             # Strip inline comments before any further parsing
-            comment_idx = line.find(' #')
-            if comment_idx != -1:
-                line = line[:comment_idx].strip()
+            if ' #' in line:
+                line = line.split(' #', 1)[0].strip()
+            elif line.endswith('#'):
+                line = line[:-1].strip()
+                
             if not line:
                 continue
             
             # Processing direct links (git+, http) with #egg=
             if "egg=" in line:
-                name_part = line.split("egg=")[-1].split("&")[0].strip()
+                name_part = line.split("egg=", 1)[1].split("&")[0].strip()
                 deps[name_part] = None
                 continue
 
@@ -245,9 +251,10 @@ def _parse_requirements(path: Path) -> Dict[str, Optional[str]]:
         pass
     return deps
 
-
-
 def _parse_pyproject(path: Path) -> Dict[str, Optional[str]]:
+    if path.stat().st_size > MAX_REQ_FILE_SIZE:
+        logger.warning(f"pyproject.toml too large, skipping: {path}")
+        return {}
     deps = {}
     try:
         if tomllib:
