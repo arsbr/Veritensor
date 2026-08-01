@@ -8,9 +8,18 @@ from typing import List, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-_SEVERITY_PATTERN = re.compile(r'(?:^|:\s*)(CRITICAL|HIGH|MEDIUM|LOW)', re.IGNORECASE)
-_SEVERITY_ORDER = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
+_SEVERITY_PATTERN = re.compile(
+    r'(?:^|:\s*)(CRITICAL|HIGH|MEDIUM|LOW|UNSAFE_IMPORT)',
+    re.IGNORECASE
+)
 
+_SEVERITY_ORDER = {
+    "CRITICAL": 4, 
+    "HIGH": 3, 
+    "MEDIUM": 2, 
+    "UNSAFE_IMPORT": 2,  
+    "LOW": 1
+}
 def _extract_max_severity(threats: List[str]) -> Optional[str]:
     """Extracts the highest severity from a list of threat strings, handling LINE formats."""
     max_val = 0
@@ -41,7 +50,7 @@ class RAGGuard:
         text_attribute: str = "page_content"
     ) -> List[Any]:
         if block_on is None:
-            block_on = ["CRITICAL", "HIGH"]
+            block_on = ["CRITICAL", "HIGH", "UNSAFE_IMPORT"]
 
         if not documents:
             return []
