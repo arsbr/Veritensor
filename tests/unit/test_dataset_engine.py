@@ -40,7 +40,7 @@ def test_scan_csv_with_threats(temp_data_dir):
     csv_file = temp_data_dir / "test.csv"
     csv_file.write_text(f"id,text\n1,SAFE\n2,https://evil.exe\n3,{FAKE_AWS_KEY}")
     
-    # CRITICAL FIX: Unpack the tuple (threats, bias_data)
+    # Unpack the tuple (threats, bias_data)
     threats, _ = scan_dataset(csv_file)
     assert any("Malicious URL" in t for t in threats)
     assert any("Secret/PII" in t for t in threats)
@@ -49,7 +49,7 @@ def test_scan_jsonl_deep_nesting(temp_data_dir):
     """Test: Recursion protection (deep JSON) without hitting json.dumps limits."""
     jsonl_file = temp_data_dir / "deep.jsonl"
     
-    # CRITICAL FIX: Generate deep JSON string manually to bypass json.dumps recursion limit
+    # Generate deep JSON string manually to bypass json.dumps recursion limit
     depth = 1000
     deep_json_str = '{"data": ' + ('[' * depth) + '"SAFE"' + (']' * depth) + '}'
     
@@ -72,7 +72,7 @@ def test_scan_jsonl_oversized_line(temp_data_dir):
         # Use valid length key
         f.write(json.dumps({"text": FAKE_AWS_KEY}) + "\n")
 
-    # CRITICAL FIX: Unpack the tuple
+    # Unpack the tuple
     threats, _ = scan_dataset(jsonl_file)
     # The first line should be skipped, the second one should be caught.
     assert any("Secret/PII" in t for t in threats)
@@ -87,7 +87,7 @@ def test_scan_parquet_column_pruning(temp_data_dir):
     })
     df.to_parquet(pq_file)
 
-    # CRITICAL FIX: Unpack the tuple
+    # Unpack the tuple
     threats, _ = scan_dataset(pq_file)
     assert any("Malicious URL" in t for t in threats)
 
@@ -102,11 +102,11 @@ def test_sampling_logic(temp_data_dir):
             f.write(f"{val}\n")
 
     # With a normal scan (10k limit), the threat should NOT be found.
-    # CRITICAL FIX: Unpack the tuple
+    # Unpack the tuple
     threats_quick, _ = scan_dataset(csv_file, full_scan=False)
     assert len(threats_quick) == 0
 
     # If full_scan=True, the threat MUST be found.
-    # CRITICAL FIX: Unpack the tuple
+    # Unpack the tuple
     threats_full, _ = scan_dataset(csv_file, full_scan=True)
     assert len(threats_full) > 0
