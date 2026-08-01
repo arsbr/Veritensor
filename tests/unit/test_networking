@@ -1,0 +1,121 @@
+"""
+Tests for networking.py — SSRF protection layer.
+This module had NO tests before. It is the primary security boundary
+that prevents Veritensor from being used as an SSRF proxy.
+"""
+import socket
+import pytest
+from unittest.mock import patch
+from veritensor.core.networking import validate_ip_ssrf, _validate_url_ssrf
+
+
+class TestValidateIpSsrf:
+    """Unit tests for the per-IP validation helper."""
+
+    def test_public_ipv4_allowed(self):
+        assert validate_ip_ssrf("8.8.8.8") is True
+
+    def test_public_ipv4_cloudflare_allowed(self):
+        assert validate_ip_ssrf("1.1.1.1") is True
+
+    def test_private_192_168_blocked(self):
+        assert validate_ip_ssrf("192.168.1.1") is False
+
+    def test_private_10_net_blocked(self):
+        assert validate_ip_ssrf("10.0.0.1") is False
+
+    def test_private_172_16_blocked(self):
+        assert validate_ip_ssrf("172.16.0.1") is False
+
+    def test_loopback_ipv4_blocked(self):
+        assert validate_ip_ssrf("127.0.0.1") is False
+
+    def test_loopback_all_zeros_blocked(self):
+        assert validate_ip_ssrf("0.0.0.0") is False
+
+    def test_link_local_blocked(self):
+        # AWS metadata endpoint range
+        assert validate_ip_ssrf("169.254.169.254") is False
+
+    def test_multicast_blocked(self):
+        assert validate_ip_ssrf("224.0.0.1") is False
+
+    def test_broadcast_blocked(self):
+        assert validate_ip_ssrf("255.255.255.255") is False
+
+    def test_ipv6_loopback_blocked(self):
+        assert validate_ip_ssrf("::1") is False
+
+    def test_ipv6_public_allowed(self):
+        # 2606:4700:4700::1111 = Cloudflare public DNS
+        assert validate_ip_ssrf("2606:4700:4700::1111") is True
+
+    def test_invalid_ip_returns_false(self):
+        # Malformed strings should not crash
+        assert validate_ip_ssrf("not-an-ip") is False
+        assert validate_ip_ssrf("") is False
+
+
+class TestValidateUrlSsrf:
+    """Integration tests for the URL-level SSRF validator."""
+
+    def test_public_url_does_not_raise(self):
+        """URL resolving to a public IP must pass silently."""
+        public_addresses = [(None, None, None, None, ("8.8.8.8", 0))]
+        with patch("socket.getaddrinfo", return_value=public_addresses):
+            _validate_url_ssrf("https://api.example.com/v1")  # Must not raise
+
+    def test_private_ip_url_raises_value_error(self):
+        """URL resolving only to private IPs must raise ValueError."""
+        private_addresses = [(None, None, None, None, ("192.168.1.100", 0))]
+        with patch("socket.getaddrinfo", return_value=private_addresses):
+            with pytest.raises(ValueError, match="SSRF Protection"):
+                _validate_url_ssrf("http://internal-api/admin")
+
+    def test_loopback_url_raises(self):
+        loopback = [(None, None, None, None, ("127.0.0.1", 0))]
+        with patch("socket.getaddrinfo", return_value=loopback):
+            with pytest.raises(ValueError):
+                _validate_url_ssrf("http://localhost:8080/secret")
+
+    def test_link_local_aws_metadata_raises(self):
+        """169.254.169.254 is the AWS metadata endpoint — must be blocked."""
+        aws_meta = [(None, None, None, None, ("169.254.169.254", 0))]
+        with patch("socket.getaddrinfo", return_value=aws_meta):
+            with pytest.raises(ValueError, match="SSRF Protection"):
+                _validate_url_ssrf("http://169.254.169.254/latest/meta-data/")
+
+    def test_unresolvable_hostname_raises(self):
+        with patch("socket.getaddrinfo", side_effect=socket.gaierror("NXDOMAIN")):
+            with pytest.raises(ValueError, match="Cannot resolve"):
+                _validate_url_ssrf("https://this.definitely.does.not.exist.invalid/")
+
+    def test_empty_url_does_not_raise(self):
+        """Empty / None-hostname URLs should be silently accepted."""
+        _validate_url_ssrf("")  # No scheme → no hostname → no check
+
+    def test_url_without_hostname_does_not_raise(self):
+        _validate_url_ssrf("ftp://")  # Parsed hostname is None
+
+    def test_mixed_ips_passes_if_one_public(self):
+        """
+        A hostname resolving to both private and public IPs should pass —
+        the function returns on the first safe IP found.
+        """
+        mixed = [
+            (None, None, None, None, ("10.0.0.1", 0)),   # private — skip
+            (None, None, None, None, ("93.184.216.34", 0)),  # public  — pass
+        ]
+        with patch("socket.getaddrinfo", return_value=mixed):
+            _validate_url_ssrf("https://example.com")  # Must not raise
+
+    def test_all_private_raises_even_with_many_ips(self):
+        """Every resolved IP being private must trigger the error."""
+        all_private = [
+            (None, None, None, None, ("10.0.0.1", 0)),
+            (None, None, None, None, ("192.168.1.1", 0)),
+            (None, None, None, None, ("172.16.0.1", 0)),
+        ]
+        with patch("socket.getaddrinfo", return_value=all_private):
+            with pytest.raises(ValueError, match="SSRF Protection"):
+                _validate_url_ssrf("http://evil-internal-cluster/api")
