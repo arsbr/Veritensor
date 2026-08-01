@@ -12,7 +12,7 @@ INPUT_FORCE="$4"
 INPUT_FORMAT="$5"
 
 # 2. Build command
-# FIX: Added quotes around path to handle spaces in filenames
+# Added quotes around path to handle spaces in filenames
 CMD="veritensor scan \"$INPUT_PATH\""
 
 # 3. Append flags
