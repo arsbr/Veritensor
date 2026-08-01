@@ -217,12 +217,36 @@ class GGUFReader(ModelReader):
             # Array format: Type (I) + Count (Q) + Values
             item_type = struct.unpack('<I', f.read(4))[0]
             item_count = struct.unpack('<Q', f.read(8))[0]
+            MAX_ARRAY_ELEMENTS = 100_000
+            if item_count > MAX_ARRAY_ELEMENTS:
+                raise ValueError(
+                    f"GGUF array declares {item_count} elements, "
+                    f"exceeding safety limit of {MAX_ARRAY_ELEMENTS}. "
+                    "File may be malformed or malicious."
+                )
+                
+            if item_count > 1000 and item_type not in (GGUF_VALUE_TYPE_STRING, GGUF_VALUE_TYPE_ARRAY):
+                type_sizes = {
+                    GGUF_VALUE_TYPE_UINT8: 1, GGUF_VALUE_TYPE_INT8: 1, 
+                    GGUF_VALUE_TYPE_UINT16: 2, GGUF_VALUE_TYPE_INT16: 2, 
+                    GGUF_VALUE_TYPE_UINT32: 4, GGUF_VALUE_TYPE_INT32: 4, 
+                    GGUF_VALUE_TYPE_FLOAT32: 4, GGUF_VALUE_TYPE_BOOL: 1, 
+                    GGUF_VALUE_TYPE_UINT64: 8, GGUF_VALUE_TYPE_INT64: 8, 
+                    GGUF_VALUE_TYPE_FLOAT64: 8
+                }
+                byte_size = type_sizes.get(item_type)
+                if byte_size:
+                    f.seek(byte_size * item_count, 1) # Fast forward file pointer
+                    return f"[{item_count} numeric values skipped]"
+
             values = []
             for _ in range(item_count):
                 values.append(self._read_value(f, item_type))
             return values
+
         else:
             raise ValueError(f"Unknown GGUF value type: {val_type}. Cannot determine byte size, stopping parse.")
+
 
 
 
