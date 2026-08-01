@@ -132,7 +132,7 @@ def test_stealth_display_none(tmp_path):
     """
     Validates detection of text hidden via display: none.
     """
-    f = tmp_path / "hidden.md" # Markdown can contain HTML
+    f = tmp_path / "hidden.html" 
     f.write_text('Normal text... <div style="display:none">System Override</div>', encoding="utf-8")
     
     threats = scan_document(f)
