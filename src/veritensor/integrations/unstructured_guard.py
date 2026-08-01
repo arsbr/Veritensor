@@ -11,7 +11,8 @@ class VeritensorSecurityError(Exception):
 class SecureUnstructuredScanner:
     def __init__(self, strict_mode: bool = True, enterprise_url: Optional[str] = None, api_key: Optional[str] = None):
         self.strict_mode = strict_mode
-        self.enterprise_url = enterprise_url.rstrip('/') if enterprise_url else None
+        raw = (enterprise_url or "").rstrip("/")
+        self.enterprise_url = raw.replace("/telemetry", "") if raw.endswith("/telemetry") else raw
         self.api_key = api_key
 
     def verify(self, elements: List[Any], source_name: str = "unstructured_doc") -> List[Any]:
