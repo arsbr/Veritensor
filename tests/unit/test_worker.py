@@ -11,7 +11,7 @@ def test_worker_detects_pickle(tmp_path):
 
     config = VeritensorConfig()
     
-    # FIX: Added 7th argument (precalc_hash = None)
+    # Added 7th argument (precalc_hash = None)
     # Args: (path, config, repo, ignore_license, full_scan, is_s3, precalc_hash)
     args = (str(f), config, None, False, False, False, None)
     
@@ -26,7 +26,7 @@ def test_worker_s3_logic(mocker):
     
     config = VeritensorConfig()
     
-    # FIX: Added 7th argument (precalc_hash = None)
+    # Added 7th argument (precalc_hash = None)
     args = ("s3://bucket/model.pkl", config, None, False, False, True, None)
     
     result = scan_worker(args)
