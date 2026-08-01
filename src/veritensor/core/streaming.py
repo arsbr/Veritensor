@@ -7,6 +7,8 @@ import logging
 from urllib.parse import urlparse
 from typing import Optional, List, Any
 from veritensor.core.networking import get_safe_session
+import re
+from veritensor.core.networking import get_safe_session
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,7 @@ class RemoteStream(io.IOBase):
         self._session = session or get_safe_session(self.url)
         self.pos = 0
         self.size = self._fetch_size()
-        self._closed = False
+      
 
     def _validate_url(self, url: str):
         try:
@@ -43,8 +45,7 @@ class RemoteStream(io.IOBase):
             domain = parsed.netloc.lower()
             is_allowed = (domain in ALLOWED_DOMAINS) or (domain.endswith(".huggingface.co"))
 
-            # warning-only allowed any URL through,
-            # completely bypassing the domain allowlist.
+            # Strict domain allowlist enforcement.
             if not is_allowed:
                 raise ValueError(
                     f"SSRF Protection: Domain '{domain}' is not in the allowed list "
@@ -113,10 +114,11 @@ class RemoteStream(io.IOBase):
     def readable(self) -> bool: return True
     def close(self):
         # Properly close the session and call super().close()
-        if not self._closed:
-            self._closed = True
-            self._session.close()
-            super().close()
+        if not self.closed:
+            super().close()  # This sets self.closed = True and flushes
+            if hasattr(self, '_session'):
+                self._session.close()
+
     def __enter__(self): return self
     def __exit__(self, exc_type, exc, tb): self.close()
 
@@ -133,7 +135,7 @@ class S3Stream(io.IOBase):
         self.bucket = parsed.netloc
         self.key = parsed.path.lstrip("/")
         self.pos = 0
-        self._closed = False
+   
 
         # 1. Try standard client
         self.s3 = boto3.client("s3")
@@ -196,9 +198,9 @@ class S3Stream(io.IOBase):
     def readable(self) -> bool: return True
     def close(self):
         # Call super().close() to properly update io.IOBase state
-        if not self._closed:
-            self._closed = True
+        if not self.closed:
             super().close()
+
     def __enter__(self): return self
     def __exit__(self, exc_type, exc, tb): self.close()
 
@@ -219,13 +221,25 @@ def resolve_huggingface_repo(repo_id: str) -> List[str]:
     if repo_id.startswith("hf://"):
         repo_id = repo_id[len("hf://"):]
     api_url = f"https://huggingface.co/api/models/{repo_id}/tree/main"
+    
+    # Validate repo_id format to prevent path traversal or URL injection
+    if not re.match(r'^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$', repo_id):
+        logger.error(f"Invalid HuggingFace repo_id format: {repo_id}")
+        return []
+        
+    api_url = f"https://huggingface.co/api/models/{repo_id}/tree/main"
+    
     try:
-        resp = requests.get(api_url, timeout=10)
-        resp.raise_for_status()
-        files_info = resp.json()
+        # Use safe session to enforce SSRF protection on the outbound request
+        safe_session = get_safe_session()
+        with safe_session:
+            resp = safe_session.get(api_url, timeout=10)
+            resp.raise_for_status()
+            files_info = resp.json()
     except Exception as e:
         logger.error(f"Failed to resolve HF repo {repo_id}: {e}")
         return []
+        
     supported_exts = (".pt", ".pth", ".bin", ".safetensors", ".gguf", ".pkl")
     urls = []
     for entry in files_info:
