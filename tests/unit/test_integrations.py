@@ -8,7 +8,7 @@ from veritensor.integrations.chroma_guard import SecureChromaCollection, Veriten
 
 @pytest.fixture
 def dummy_file(tmp_path):
-    """Создаем пустой файл для тестов."""
+    """Creating an empty test file."""
     f = tmp_path / "test_doc.pdf"
     f.write_text("dummy content")
     return f
