@@ -10,6 +10,27 @@ logger = logging.getLogger(__name__)
 # Save the original connection function
 _orig_create_connection = urllib3_cn.create_connection
 
+def _validate_url_ssrf(url: str) -> None:
+    """Validates that the URL resolves to a safe public IP. Does not connect."""
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if not hostname:
+        return
+        
+    try:
+        ip_list = socket.getaddrinfo(hostname, None, 0, socket.SOCK_STREAM)
+    except socket.gaierror:
+        raise ValueError(f"Cannot resolve hostname: {hostname}")
+        
+    for item in ip_list:
+        ip_addr = item[4][0]
+        if validate_ip_ssrf(ip_addr):
+            return  # At least one safe public IP found
+
+    # Raise exception if all resolved IPs are private/internal
+    raise ValueError(f"SSRF Protection: No safe public IP found for {hostname}. Access forbidden.")
+
 def validate_ip_ssrf(ip_addr: str) -> bool:
     """Checks if an IP address is public and safe to connect to."""
     try:
@@ -57,11 +78,7 @@ def get_safe_session(url: str = None) -> requests.Session:
     The global urllib3 patch ensures all requests made by this session are safe.
     """
     if url:
-        # Trigger a dry-run resolution check immediately if a URL is provided
-        from urllib.parse import urlparse
-        parsed = urlparse(url)
-        hostname = parsed.hostname
-        if hostname:
-            safe_create_connection((hostname, parsed.port or 80))
+        # Perform dry-run DNS validation without opening a TCP socket
+        _validate_url_ssrf(url)
             
     return requests.Session()
