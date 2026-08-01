@@ -111,3 +111,39 @@ def test_scan_osv_offline_graceful(mock_get_session, tmp_path):
 
     threats = scan_dependencies(f)
     assert isinstance(threats, list)
+
+# ── C-7 REGRESSION: egg= URL parsing uses [1] not [-1] ───────────────────────
+
+def test_c7_regression_egg_in_vcs_url_detected(tmp_path):
+    """
+    C-7 regression: requirements.txt VCS URL with egg= anchor must correctly
+    extract the package name using split('egg=', 1)[1], not split('egg=')[-1].
+
+    With split('egg=')[-1]:
+      URL: git+https://...#egg=tourch&extra=egg=notthepackage
+      Result: "notthepackage" → NOT in KNOWN_MALICIOUS → missed!
+
+    With split('egg=', 1)[1]:
+      Result: "tourch&extra=egg=notthepackage" → split('&')[0] = "tourch" → detected!
+    """
+    f = tmp_path / "requirements.txt"
+    f.write_text(
+        "git+https://github.com/evil-org/repo.git@main"
+        "#egg=tourch&extra_option=egg=not_the_package\n"
+    )
+    with patch("requests.post"):
+        threats = scan_dependencies(f)
+
+    assert any("Known malicious" in t and "tourch" in t for t in threats), (
+        "C-7 regression: split('egg=')[-1] returned wrong package name "
+        "when URL contains 'egg=' more than once."
+    )
+
+
+def test_egg_simple_vcs_url_still_works(tmp_path):
+    """Regression guard: normal egg= URL (no double occurrence) still works."""
+    f = tmp_path / "requirements.txt"
+    f.write_text("git+https://github.com/evil/repo.git@main#egg=tourch\n")
+    with patch("requests.post"):
+        threats = scan_dependencies(f)
+    assert any("tourch" in t for t in threats)
