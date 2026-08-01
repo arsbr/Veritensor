@@ -24,7 +24,10 @@ COPY src/ src/
 COPY veritensor.yaml .
 
 # Re-install the package to link the actual source code
-RUN pip install .
+# Uninstall pip and wheel after the final installation to remove 
+# vulnerable vendored dependencies (like msgpack) and reduce attack surface.
+RUN pip install --no-cache-dir . && \
+    pip uninstall -y pip wheel
 
 # --- Setup Entrypoint ---
 COPY entrypoint.sh /entrypoint.sh
