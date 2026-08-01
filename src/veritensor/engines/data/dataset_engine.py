@@ -249,11 +249,15 @@ def _stream_csv(path: Path) -> Generator[str, None, None]:
         return
     except Exception:
         import csv, sys
-        csv.field_size_limit(min(sys.maxsize, 2147483647))
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            reader = csv.reader(f, delimiter=sep)
-            for row in reader:
-                yield " ".join(row)
+        original_limit = csv.field_size_limit()
+        try:
+            csv.field_size_limit(min(sys.maxsize, 2147483647))
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                reader = csv.reader(f, delimiter=sep)
+                for row in reader:
+                    yield " ".join(row)
+        finally:
+            csv.field_size_limit(original_limit)
 
 def _stream_jsonl(path: Path) -> Generator[str, None, None]:
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
@@ -294,7 +298,7 @@ class BiasAggregator:
         self.candidate_cols = None
 
     def update(self, df):
-        
+        df = df.copy()
         df.columns = df.columns.str.strip().str.lower()
         
         target_var_lower = self.target_var.lower()
