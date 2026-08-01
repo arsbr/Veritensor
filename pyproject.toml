@@ -33,10 +33,10 @@ dependencies = [
     "huggingface_hub>=0.19.0",
     "cyclonedx-python-lib>=6.0.0",
     "jinja2>=3.1.0",
-    "pillow>=12.2.0",
+    "pillow>=12.3.0",
     "lxml>=6.1.0",
     "urllib3 >= 2.7.0",
-    "gitpython>=3.1.49",
+    "gitpython>=3.1.54",
     "pyarrow>=14.0.0",
     "pandas>=2.0.0",
     "openpyxl>=3.1.0",
@@ -64,7 +64,7 @@ pii = [
 
 # Optional dependencies for RAG document scanning (PDF, DOCX)
 rag = [
-    "pypdf>=4.0.0",
+    "pypdf>=6.14.2",
     "python-docx>=1.1.0",
     "python-pptx>=0.6.21",
     "veritensor[pii]"
