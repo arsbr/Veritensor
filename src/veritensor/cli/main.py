@@ -61,7 +61,6 @@ except ImportError:
     from veritensor.engines.static.rules import is_license_restricted
     def is_match(repo, allowed): return False
 
-from veritensor.integrations.cosign import sign_container, is_cosign_available, generate_key_pair
 from veritensor.integrations.huggingface import HuggingFaceClient
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -110,7 +109,7 @@ HEAVY_EXTS = {
             # --- AI Notebooks (AST, Secrets, Outputs) ---
             ".ipynb",
 
-            # --- Datasets (Сэмплируются перед отправкой!) ---
+            # --- Datasets (sampled before upload to reduce payload size!) ---
             ".parquet", ".csv", ".tsv", ".jsonl", ".ndjson",
 
             # --- Text & Markup (DeBERTa Semantic Scan, GLiNER) ---
@@ -132,6 +131,22 @@ HEAVY_EXTS = {
         # Specific files that are sent to the server (name verification)
 HEAVY_FILES = {"dockerfile"}
 
+def _build_api_url(report_url: str, endpoint: str) -> str:
+    """
+    Safely constructs API endpoint URL.
+    Expected input formats:
+      - http://server/api/v1
+      - http://server/api/v1/telemetry
+    """
+    if not report_url:
+        return ""
+    base = report_url.rstrip("/")
+    for suffix in ("/api/v1/telemetry", "/telemetry", "/api/v1"):
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+            
+    return f"{base.rstrip('/')}/api/v1{endpoint}"
 
 def load_ignore_patterns(ignore_file: str = ".veritensorignore") -> List[str]:
     """Loads glob patterns from .veritensorignore file."""
@@ -167,7 +182,7 @@ def check_remote_cache(report_url: str, api_key: str, hashes: List[str], version
     if not report_url or not api_key or not hashes:
         return {}
     
-    cache_url = report_url.replace("/telemetry", "/cache/check")
+    cache_url = _build_api_url(report_url, "/cache/check")
     headers = {"X-API-Key": api_key}
     payload = {"hashes": hashes, "scanner_version": version} # Added a version to the payload
     
@@ -184,7 +199,7 @@ def fetch_server_policies(report_url: str, api_key: str) -> Tuple[Optional[dict]
     if not report_url or not api_key:
         return None,[]
     
-    policy_url = report_url.replace("/telemetry", "/policies")
+    policy_url = _build_api_url(report_url, "/policies")
     headers = {"X-API-Key": api_key}
     
     try:
@@ -264,12 +279,28 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
                 scanner = EnterpriseScanner(config.report_url, config.api_key)
                 remote_threats = scanner.scan_file_remotely(file_path, full_scan=full_scan_dataset)
                 
-                if remote_threats:
-                    for t in remote_threats: scan_res.add_threat(t)
+                # Detect network/timeout failures by inspecting returned warnings
+                _INFRA_FAILURE_PREFIXES = (
+                    "WARNING: Failed to reach",
+                    "WARNING: Enterprise scan timed out",
+                    "WARNING: S3",
+                )
+                is_infra_failure = any(
+                    t.startswith(_INFRA_FAILURE_PREFIXES) for t in remote_threats
+                ) if remote_threats else False
                 
-                already_remote_scanned = True    
-                # The file has been verified on the server (ML, OCR, YARA), so we skip the local checks
-                #return scan_res
+                if is_infra_failure:
+                    # Infrastructure failure: do NOT set already_remote_scanned
+                    # so local fallback can run for supported formats
+                    logger.warning(f"Remote scan unavailable for {file_name}. Falling back to local scan.")
+                    for t in remote_threats:
+                        scan_res.threats.append(t)  # Append without triggering immediate FAIL status
+                else:
+                    if remote_threats:
+                        for t in remote_threats: 
+                            scan_res.add_threat(t)
+                    already_remote_scanned = True    
+                    
             except Exception as e:
                 scan_res.add_threat(f"WARNING: Remote scan failed, falling back to local: {e}")
 
@@ -330,8 +361,7 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
                     try:
             
                         safe_filename = quote(file_name, safe='')
-                        prof_url = config.report_url.replace("/telemetry", f"/fairness/profiles/{safe_filename}")
-                        
+                        prof_url = _build_api_url(config.report_url, f"/fairness/profiles/{safe_filename}")
                         res = requests.get(prof_url, headers={"X-API-Key": config.api_key}, timeout=5)
                         if res.status_code == 200:
                             bias_profile = res.json().get("profile")
@@ -342,8 +372,9 @@ def scan_worker(args: Tuple[str, VeritensorConfig, Optional[str], bool, bool, bo
                 # Pass the profile to the scanner
                 threats, bias_data = scan_dataset(file_path, full_scan=full_scan_dataset, bias_profile=bias_profile)
                 
-                for t in threats: 
-                    scan_res.add_threat(t)
+                if not already_remote_scanned:
+                    for t in threats: 
+                        scan_res.add_threat(t)
                     
                 # Attach bias data to the result so it gets sent in telemetry
                 if bias_data:
@@ -431,8 +462,8 @@ def _run_scan_process(
     Core logic to collect files and run parallel scan.
     Used by both 'scan' and 'manifest' commands.
     """
-    files_to_scan =[]
-    ignore_patterns = load_ignore_patterns() # Load .veritensorignore
+    files_to_scan: List[str] = []
+    ignore_patterns = load_ignore_patterns() 
     
     # 1. Collect Files from all paths
     for path in paths:
@@ -443,11 +474,11 @@ def _run_scan_process(
             local_path = Path(path)
             if local_path.is_file():
                 if not is_ignored(local_path, ignore_patterns):
-                    files_to_scan.append(local_path)
+                    files_to_scan.append(str(local_path))
             elif local_path.is_dir():
                 for p in local_path.rglob("*"):
                     if p.is_file() and not is_ignored(p, ignore_patterns):
-                        files_to_scan.append(p)
+                        files_to_scan.append(str(p))
             else:
                 raise FileNotFoundError(f"Path {path} not found.")
 
@@ -467,21 +498,16 @@ def _run_scan_process(
     tasks = []
     
     # First, we quickly calculate the hashes locally (using SQLite so as not to read the files again)
-    local_hashes_map = {} # {filepath: hash}
+    local_hashes_map = {} 
+    
     for f in files_to_scan:
-        if str(f).startswith("s3://"):
+        if f.startswith("s3://"):
             continue
-        cached_hash = hash_cache.get(f)
+            
+        file_path_obj = Path(f)
+        cached_hash = hash_cache.get(file_path_obj)
         if cached_hash:
-            local_hashes_map[str(f)] = cached_hash
-        else:
-            # If there is no local cache, you will have to calculate
-            try:
-                h = calculate_sha256(f)
-                local_hashes_map[str(f)] = h
-                hash_cache.set(f, h)
-            except Exception:
-                pass
+            local_hashes_map[f] = cached_hash
 
     # We ask the server about these hashes
     remote_cache_results = {}
@@ -493,17 +519,17 @@ def _run_scan_process(
 
     # Creating tasks
     for f in files_to_scan:
-        is_s3 = str(f).startswith("s3://")
+        is_s3 = f.startswith("s3://")
         if is_s3:
-            tasks.append((str(f), config, repo, ignore_license, full_scan, True, None))
+            tasks.append((f, config, repo, ignore_license, full_scan, True, None))
             continue
             
-        file_hash = local_hashes_map.get(str(f))
+        file_hash = local_hashes_map.get(f)
         
         # If the server knows this file, we DON'T add it to tasks
         if file_hash and file_hash in remote_cache_results:
             remote_data = remote_cache_results[file_hash]
-            res = ScanResult(file_path=str(f), status=remote_data["status"], file_hash=file_hash)
+            res = ScanResult(file_path=f, status=remote_data["status"], file_hash=file_hash)
             res.threats = remote_data["threats"]
 
             reader = get_reader_for_file(Path(f))
@@ -516,7 +542,7 @@ def _run_scan_process(
                 
             results.append(res) 
         else:
-            tasks.append((str(f), config, repo, ignore_license, full_scan, False, file_hash))
+            tasks.append((f, config, repo, ignore_license, full_scan, False, file_hash))
 
     # 3. Execute
     executor = None
@@ -573,7 +599,6 @@ def _run_scan_process(
 def scan(
     paths: List[str] = typer.Argument(..., help="Paths to files, directories, or S3 URLs"),
     repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Hugging Face Repo ID"),
-    image: Optional[str] = typer.Option(None, help="Docker image tag to sign"),
     ignore_license: bool = typer.Option(False, "--ignore-license", help="Do not fail on license violations"),
     ignore_malware: bool = typer.Option(False, "--ignore-malware", help="Do not fail on malware/policy violations"),
     full_scan: bool = typer.Option(False, "--full-scan", help="Scan entire dataset (slow)."),
@@ -611,7 +636,7 @@ def scan(
             try:
                 with open(policy_path, "r") as f:
                     yaml_content = f.read()
-                sync_url = config.report_url.replace("/telemetry", "/policies/sync")
+                sync_url = _build_api_url(config.report_url, "/policies/sync")
                 res = requests.post(sync_url, headers={"X-API-Key": config.api_key}, json={"yaml_content": yaml_content})
                 if res.status_code == 200:
                     console.print("[bold green]✅ Policy-as-Code successfully synced to Control Plane.[/bold green]")
@@ -733,6 +758,8 @@ def scan(
         
         if blocking_threats:
             res.status = "FAIL"
+        elif any(t.startswith("WARNING: Failed to reach") or t.startswith("WARNING: Enterprise scan timed out") for t in real_threats):
+            res.status = "SCAN_ERROR"
         else:
             res.status = "PASS"
             
@@ -751,8 +778,9 @@ def scan(
             if not res.threats: continue
             
             artifact_name = Path(res.file_path).name
+            safe_artifact_name = quote(artifact_name, safe='')
             fingerprint_param = f"?fingerprint={res.file_hash}" if res.file_hash else ""
-            baseline_url = config.report_url.replace("/telemetry", f"/scans/{artifact_name}/baseline{fingerprint_param}")
+            baseline_url = _build_api_url(config.report_url, f"/scans/{safe_artifact_name}/baseline{fingerprint_param}")
             
             try:
                 b_res = requests.get(baseline_url, headers={"X-API-Key": config.api_key}, timeout=60)
@@ -825,11 +853,11 @@ def scan(
 
     machine_text = None        
     if sarif_output:
-        machine_text = generate_sarif_report(results)
+        machine_text = generate_sarif_report(filtered_results)
     elif sbom_output:
-        machine_text = generate_sbom(results)
+        machine_text = generate_sbom(filtered_results)
     elif json_output:
-        results_dicts = [r.__dict__ for r in results]
+        results_dicts = [r.__dict__ for r in filtered_results]
         machine_text = json.dumps(results_dicts, indent=2)
 
     if machine_text:
@@ -891,11 +919,6 @@ def scan(
     else:
         if not is_machine_output: console.print("\n[bold green]✅ Scan Passed.[/bold green]")
 
-    if image:
-        scan_timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        _perform_signing(image, sign_status, config, scan_timestamp, results)
-
-
 @app.command()
 def manifest(
     paths: List[str] = typer.Argument(..., help="Paths to scan"), 
@@ -935,31 +958,6 @@ def _print_table(results: List[ScanResult]):
         file_name = Path(res.file_path).name if res.file_path else "unknown"
         table.add_row(file_name, f"[{status_style}]{res.status}[/{status_style}]", display_threats)
     console.print(table)
-
-def _perform_signing(image: str, status: str, config, timestamp: str, results: List[ScanResult]):
-    console.print(f"\n🔐 [bold]Signing container:[/bold] {image}")
-    key_path = config.private_key_path or os.environ.get("VERITENSOR_PRIVATE_KEY_PATH")
-    if not key_path:
-         console.print("[red]Skipping signing: No private key found.[/red]")
-         return
-    annotations = {"scanned_by": "veritensor", "status": status, "scan_date": timestamp}
-    if results:
-        primary = results[0]
-        if primary.file_hash: annotations["ai.model.hash"] = primary.file_hash
-        if primary.detected_license: annotations["ai.model.license"] = primary.detected_license
-        if primary.repo_id: annotations["ai.model.source"] = primary.repo_id
-    success = sign_container(image, key_path, annotations=annotations)
-    if success: console.print(f"[green]✔ Signed with Smart Attestation.[/green]")
-    else: console.print(f"[bold red]Signing Failed.[/bold red]")
-
-@app.command()
-def keygen(output_prefix: str = "veritensor"):
-    console.print(f"[bold]Generating Cosign Key Pair ({output_prefix})...[/bold]")
-    if not is_cosign_available():
-        console.print("[bold red]Error:[/bold red] 'cosign' binary not found.")
-        raise typer.Exit(code=1)
-    if generate_key_pair(output_prefix): console.print(f"[green]✔ Keys generated.[/green]")
-    else: console.print("[red]Key generation failed.[/red]")
 
 @app.command()
 def update():
