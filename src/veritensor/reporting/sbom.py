@@ -11,7 +11,7 @@
 #   - Graceful fallback to plain JSON if cyclonedx-python-lib is unavailable
 
 from __future__ import annotations
-
+import sys
 import logging
 from typing import List
 
@@ -139,6 +139,10 @@ def generate_sbom(results: List[ScanResult]) -> str:
         return JsonV1Dot5(bom).output_as_string()
     except Exception as e:
         logger.warning(f"CycloneDX serialisation failed ({e}), using plain JSON fallback.")
+        print(
+            "WARNING: CycloneDX serialisation failed. Output is plain JSON, not CycloneDX format.",
+            file=sys.stderr
+        )
         return _plain_json_fallback(results)
 
 
