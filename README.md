@@ -333,32 +333,6 @@ veritensor scan ./models \
     --sarif --output-file report.sarif \
     --json --output-file results.json
 ```
----
-
-## 🔐 Supply Chain Security (Container Signing)
-
-Veritensor integrates with Sigstore Cosign to cryptographically sign your Docker images only if they pass the security scan.
-
-### 1. Generate Keys
-Generate a key pair for signing:
-```bash
-veritensor keygen
-# Output: veritensor.key (Private) and veritensor.pub (Public)
-```
-### 2. Scan & Sign
-Pass the --image flag and the path to your private key (via env var).
-```bash
-# Set path to your private key
-export VERITENSOR_PRIVATE_KEY_PATH=veritensor.key
-
-# If scan passes -> Sign the image
-veritensor scan ./models/my_model.pkl --image my-org/my-app:v1.0.0
-```
-### 3. Verify (In Kubernetes / Production)
-Before deploying, verify the signature to ensure the model was scanned:
-```bash
-cosign verify --key veritensor.pub my-org/my-app:v1.0.0
-```
 
 ---
 
