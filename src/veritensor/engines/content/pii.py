@@ -2,6 +2,7 @@
 import logging
 from typing import List
 import warnings
+import threading
 
 warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
 logger = logging.getLogger(__name__)
@@ -12,12 +13,18 @@ PRESIDIO_AVAILABLE = None
 class PIIScanner:
     _engine = None
     _init_error = None
+    _lock = threading.Lock()
 
     @classmethod
     def get_engine(cls):
         global PRESIDIO_AVAILABLE
         
-        if PRESIDIO_AVAILABLE is None:
+        if PRESIDIO_AVAILABLE is not None:
+            return cls._engine
+            
+        with cls._lock:
+            if PRESIDIO_AVAILABLE is not None:
+                return cls._engine
             try:
                 # Lazy import inside the method to prevent DLL/OSError crashes on startup
                 from presidio_analyzer import AnalyzerEngine
