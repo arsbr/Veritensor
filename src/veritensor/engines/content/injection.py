@@ -151,7 +151,7 @@ def scan_document(file_path: Path) -> List[str]:
             return [extension_threat]
 
         # PHASE 1: Raw Content Scan (Stealth Detection)
-        if ext in DOC_EXTS or ext in TEXT_EXTENSIONS:
+        if ext in DOC_EXTS or ext in {".html", ".htm"}:
             raw_threats = _scan_raw_binary(file_path)
             threats.extend(raw_threats)
 
