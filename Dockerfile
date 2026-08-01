@@ -14,7 +14,6 @@ COPY pyproject.toml .
 # Create dummy package structure to allow installing dependencies
 # before the actual code is copied. This speeds up re-builds.
 RUN mkdir -p src/veritensor && touch src/veritensor/__init__.py
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir .
 
 # Copy source code from ROOT
@@ -24,7 +23,7 @@ COPY src/ src/
 COPY veritensor.yaml .
 
 # Re-install the package to link the actual source code
-RUN pip install .
+RUN pip install --no-cache-dir --no-deps .
 
 # --- Setup Entrypoint ---
 COPY entrypoint.sh /entrypoint.sh
