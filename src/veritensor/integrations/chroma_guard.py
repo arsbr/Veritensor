@@ -22,7 +22,8 @@ class SecureChromaCollection:
         """
         self._collection = collection
         self.strict_mode = strict_mode
-        self.enterprise_url = enterprise_url.rstrip('/') if enterprise_url else None
+        raw = (enterprise_url or "").rstrip("/")
+        self.enterprise_url = raw.replace("/telemetry", "") if raw.endswith("/telemetry") else raw
         self.api_key = api_key
         
     def __getattr__(self, name):
