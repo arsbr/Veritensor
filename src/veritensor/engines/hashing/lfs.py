@@ -27,7 +27,6 @@ def parse_lfs_pointer(data: bytes) -> Optional[Dict[str, str]]:
         return None
 
     try:
-        # LFS pointers are text files, usually very small (< 200 bytes)
         text = data.decode("utf-8", errors="ignore")
         lines = text.strip().split("\n")
         
@@ -38,17 +37,20 @@ def parse_lfs_pointer(data: bytes) -> Optional[Dict[str, str]]:
                 key, value = parts
                 info[key] = value.strip()
         
-        # Validate that we found the necessary fields
         if "oid" in info and "size" in info:
-            # oid format is usually "sha256:hash..."
             oid_parts = info["oid"].split(":")
-            if len(oid_parts) == 2 and oid_parts[0] == "sha256":
-                return {
-                    "sha256": oid_parts[1],
-                    "size": int(info["size"])
-                }
+            # Detect LFS pointers without requiring SHA256
+            if len(oid_parts) == 2:
+                algorithm, digest = oid_parts
+                if algorithm == "sha256":
+                    return {"sha256": digest, "size": int(info["size"])}
+                else:
+                    # Still an LFS pointer, but can't extract SHA256 for verification
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"LFS pointer uses unsupported OID algorithm: {algorithm}")
+                    return {"sha256": None, "size": int(info["size"]), "algorithm": algorithm}
     except Exception:
-        # If parsing fails, it's likely not a valid pointer
         return None
 
     return None
