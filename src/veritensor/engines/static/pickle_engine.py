@@ -10,7 +10,7 @@ import io
 import logging
 import zipfile
 from typing import List, Union, BinaryIO
-
+from collections import deque
 # Import dynamic rules loader and regex matcher
 from veritensor.engines.static.rules import get_severity, SignatureLoader, is_match
 from veritensor.core.safe_zip import SafeZipReader, ZipBombError
@@ -146,7 +146,7 @@ def scan_pickle_stream(data: Union[bytes, BinaryIO], strict_mode: bool = True, e
 
     MAX_MEMO_SIZE = 2048 
     MAX_INSTRUCTIONS = 5_000_000  # Instruction limit
-    memo =[] 
+    memo = deque(maxlen=MAX_MEMO_SIZE) 
     instruction_count = 0 
 
     try:
@@ -158,8 +158,6 @@ def scan_pickle_stream(data: Union[bytes, BinaryIO], strict_mode: bool = True, e
                 break
             if opcode.name in ("SHORT_BINUNICODE", "UNICODE", "BINUNICODE"):
                 memo.append(arg)
-                if len(memo) > MAX_MEMO_SIZE: 
-                    memo.pop(0)
                 
                 # Check suspicious strings in pickle constants
                 if isinstance(arg, str) and suspicious_patterns:
