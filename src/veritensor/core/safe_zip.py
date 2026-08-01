@@ -1,5 +1,6 @@
 import zipfile
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +21,9 @@ class SafeZipReader:
         total_size = 0
         for info in zfile.infolist():
             # Protection against endless file names
-            if len(info.filename) > 1024:
-                raise ZipBombError(f"Filename too long in zip: {info.filename[:50]}...")
+            target = os.path.normpath(os.path.join("safe_root", info.filename))
+            if not target.startswith("safe_root" + os.sep) and target != "safe_root":
+                raise ZipBombError(f"Path traversal detected in ZIP entry: {info.filename}")
 
             # Checking the compression ratio
             if info.file_size > SafeZipReader.MIN_SIZE_FOR_RATIO and info.compress_size > 0:
