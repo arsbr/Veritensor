@@ -17,7 +17,7 @@ class HashCache:
 
     def _cleanup_old_entries(self, days: int = 30):
         """Remove cache entries not accessed in the last N days."""
-        if not self.conn:
+        if not self.conn or not hasattr(self, "cursor"):
             return
         try:
             cutoff = time.time() - (days * 86400)
