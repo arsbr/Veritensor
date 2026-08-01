@@ -50,17 +50,29 @@ def send_report(
 
     # 2. Sanitize Results (Privacy Filter)
     for res in results:
+        sanitized_threats = []
+        for t in res.threats:
+            if res.file_path:
+                t = t.replace(str(res.file_path), Path(res.file_path).name)
+            sanitized_threats.append(t)
+            
         payload["results"].append({
             "file_name": Path(res.file_path).name,
             "file_hash": res.file_hash,
             "status": res.status,
-            "threats": res.threats,
+            "threats": sanitized_threats,
             "license": res.detected_license,
             "repo_id": res.repo_id,
             "verified": res.identity_verified,
             "tensor_count": res.tensor_count,
             "metadata": res.extracted_metadata,
-            "bias_data": getattr(res, 'bias_data', None)
+            "bias_data": getattr(res, 'bias_data', None),
+            "file_format": res.file_format,
+            "file_size_bytes": (
+                Path(res.file_path).stat().st_size
+                if res.file_path and Path(res.file_path).exists()
+                else None
+            )
         })
 
     # 3. Send Request
