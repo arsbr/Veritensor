@@ -60,10 +60,19 @@ def _compute_sha256_from_stream(fileobj: BinaryIO, chunk_size: int) -> str:
         # Check if it's an LFS pointer
         lfs_info = parse_lfs_pointer(header_sample)
         if lfs_info:
-            logger.debug("Detected LFS pointer, using OID from metadata.")
-            return lfs_info["sha256"]
+            # Safely handle LFS pointers with non-SHA256 algorithms
+            sha256_hash = lfs_info.get("sha256")
+            if sha256_hash:
+                logger.debug("Detected LFS pointer, using OID from metadata.")
+                return sha256_hash
+                
+            # Unsupported OID algorithm — fall through to hash the pointer file itself
+            logger.warning(
+                f"LFS pointer uses unsupported OID algorithm "
+                f"({lfs_info.get('algorithm', 'unknown')}). Hashing pointer content."
+            )
+            fileobj.seek(start_pos)
             
-        # If not LFS, reset cursor to start to read the whole file
         fileobj.seek(start_pos)
         
     except (OSError, AttributeError):
