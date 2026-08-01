@@ -37,26 +37,28 @@ def scan_excel(file_path: Path) -> List[str]:
             # Limit rows per sheet to prevent DoS
             for i, row in enumerate(sheet.iter_rows(values_only=True, max_row=1000)):
                 for cell in row:
-                    if not cell or not isinstance(cell, str):
+                    # Convert all cell values to string before checking
+                    # This catches numeric-coerced strings and dates
+                    cell_str = str(cell) if cell is not None else ""
+                    if not cell_str:
                         continue
                     
                     # 1. Formula Injection
-                    if cell.startswith(FORMULA_PREFIXES):
-                        # Check for dangerous commands (cmd, powershell, http)
-                        if any(x in cell.lower() for x in ['cmd', 'powershell', 'http', 'exec']):
-                            threats.append(f"HIGH: Excel Formula Injection detected in {file_path.name}: '{cell[:50]}'")
+                    if cell_str.startswith(FORMULA_PREFIXES):
+                        if any(x in cell_str.lower() for x in ['cmd', 'powershell', 'http', 'exec']):
+                            threats.append(f"HIGH: Excel Formula Injection detected in {file_path.name}: '{cell_str[:50]}'")
 
                     # 2. Prompt Injection
-                    norm_cell = normalize_text(cell)
+                    norm_cell = normalize_text(cell_str)
                     if is_match(norm_cell, injections):
                         for pat in injections:
                             if is_match(norm_cell, [pat]):
                                 threats.append(f"HIGH: Prompt Injection in Excel: '{pat}'")
-                                return threats # Fail fast
+                                return threats 
 
-                    # 3. PII (Sample check - checking every cell is too slow, maybe check first 100 chars)
-                    if i < 50: # Check PII only in first 50 rows PER SHEET
-                        pii = PIIScanner.scan(cell)
+                    # 3. PII (Sample check)
+                    if i < 50: 
+                        pii = PIIScanner.scan(cell_str)
                         if pii:
                             threats.extend(pii)
 
@@ -66,3 +68,4 @@ def scan_excel(file_path: Path) -> List[str]:
         threats.append(f"WARNING: Excel Scan Error: {str(e)}")
 
     return threats
+
