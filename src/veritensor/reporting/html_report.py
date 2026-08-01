@@ -13,6 +13,7 @@ from typing import List
 from jinja2 import Template, Environment
 from veritensor.core.types import ScanResult
 from veritensor import __version__
+import copy
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -403,7 +404,9 @@ def generate_html_report(
     sev_counts = _count_severities(results)
     mcp_count = _count_mcp(results)
 
-    for res in results:
+    # Create a shallow copy to prevent mutating the original ScanResult objects
+    display_results = [copy.copy(r) for r in results]
+    for res in display_results:
         if res.file_path:
             res.file_path = res.file_path.replace("\\", "/")
 
@@ -418,7 +421,7 @@ def generate_html_report(
         failed=failed,
         sev_counts=sev_counts,
         mcp_count=mcp_count,
-        results=results,
+        results=display_results, # Pass the copied list to the template
         **compliance_data
     )
 
