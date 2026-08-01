@@ -123,7 +123,14 @@ _ARTICLE_WEIGHTS = {
     "Article 53": 10,  # GPAI obligations
     "Article 11": 5,   # Technical docs — lower weight
 }
+
 _TOTAL_WEIGHT = sum(_ARTICLE_WEIGHTS.values())  # 100
+
+
+_EU_CONTROL_KEYWORDS: List[Tuple[frozenset, Dict]] = [
+    (frozenset(kw.lower() for kw in ctrl["keywords"]), ctrl)
+    for ctrl in _EU_AI_ACT_CONTROLS
+]
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -161,13 +168,10 @@ class ComplianceReport:
 def _match_controls(threat: str) -> List[Dict]:
     """Returns ALL EU AI Act controls that match this threat string."""
     threat_lower = threat.lower()
-    matched =[]
-    for control in _EU_AI_ACT_CONTROLS:
-        for kw in control["keywords"]:
-            if kw.lower() in threat_lower:
-                matched.append(control)
-                break 
-    return matched
+    return [
+        ctrl for kw_set, ctrl in _EU_CONTROL_KEYWORDS
+        if any(kw in threat_lower for kw in kw_set)
+    ]
 
 
 def build_compliance_report(results: List[ScanResult]) -> ComplianceReport:
