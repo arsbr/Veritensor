@@ -1,9 +1,3 @@
-"""
-Tests for mcp_permission_auditor.py
-
-Run with:  pytest tests/test_mcp_permission_auditor.py -v
-"""
-
 import json
 import textwrap
 import pytest
