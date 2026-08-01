@@ -24,7 +24,6 @@ class VeritensorConfig:
     ignored_rules: List[str] = field(default_factory=list)
     fail_on_severity: str = "CRITICAL" 
     hf_token: Optional[str] = None
-    private_key_path: Optional[str] = None
     output_format: str = "table"
     fail_on_missing_license: bool = False
     custom_restricted_licenses: List[str] = field(default_factory=list)
@@ -63,9 +62,6 @@ class ConfigLoader:
         elif "HF_TOKEN" in os.environ:
             config_data["hf_token"] = os.environ["HF_TOKEN"]
 
-        if "VERITENSOR_PRIVATE_KEY_PATH" in os.environ:
-            config_data["private_key_path"] = os.environ["VERITENSOR_PRIVATE_KEY_PATH"]
-
         if "VERITENSOR_FAIL_ON" in os.environ:
             config_data["fail_on_severity"] = os.environ["VERITENSOR_FAIL_ON"]
 
@@ -80,7 +76,6 @@ class ConfigLoader:
             ignored_rules=config_data.get("ignored_rules", []),
             fail_on_severity=config_data.get("fail_on_severity", "CRITICAL"),
             hf_token=config_data.get("hf_token"),
-            private_key_path=config_data.get("private_key_path"),
             output_format=config_data.get("output_format", "table"),
             fail_on_missing_license=config_data.get("fail_on_missing_license", False),
             custom_restricted_licenses=config_data.get("custom_restricted_licenses", []),
