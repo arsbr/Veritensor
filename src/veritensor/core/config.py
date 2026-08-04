@@ -22,7 +22,7 @@ DEFAULT_CONFIG_PATH = Path("veritensor.yaml")
 class VeritensorConfig:
     allowed_modules: List[str] = field(default_factory=list)
     ignored_rules: List[str] = field(default_factory=list)
-    fail_on_severity: str = "CRITICAL" 
+    fail_on_severity: str = "HIGH" 
     hf_token: Optional[str] = None
     output_format: str = "table"
     fail_on_missing_license: bool = False
@@ -74,7 +74,7 @@ class ConfigLoader:
         cls._instance = VeritensorConfig(
             allowed_modules=config_data.get("allowed_modules", []),
             ignored_rules=config_data.get("ignored_rules", []),
-            fail_on_severity=config_data.get("fail_on_severity", "CRITICAL"),
+            fail_on_severity=config_data.get("fail_on_severity", "HIGH"),
             hf_token=config_data.get("hf_token"),
             output_format=config_data.get("output_format", "table"),
             fail_on_missing_license=config_data.get("fail_on_missing_license", False),
