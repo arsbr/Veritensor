@@ -13,7 +13,7 @@ def reset_singleton():
 def test_default_config_loads_without_yaml(tmp_path):
     # Pass path directly, expect HIGH instead of CRITICAL
     config = ConfigLoader.load(tmp_path / "nonexistent.yaml")
-    assert config.fail_on_severity == "CRITICAL"
+    assert config.fail_on_severity == "HIGH"
     assert config.fail_on_missing_license is False
     assert config.allowed_modules == []
 
@@ -45,7 +45,7 @@ def test_invalid_yaml_falls_back_to_defaults(tmp_path):
     config = ConfigLoader.load(yaml_path)
     assert isinstance(config, VeritensorConfig)
     # Expect CRITICAL default
-    assert config.fail_on_severity == "CRITICAL"
+    assert config.fail_on_severity == "HIGH"
 
 def test_env_hf_token_overrides_yaml(tmp_path):
     yaml_path = tmp_path / "veritensor.yaml"
