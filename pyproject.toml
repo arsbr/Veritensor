@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "veritensor"
-version = "1.9.3"
+version = "1.9.4"
 description = "Antivirus for the AI Supply Chain. Scans models, datasets, notebooks, and RAG documents for threats."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -33,7 +33,7 @@ dependencies = [
     "huggingface_hub>=0.19.0",
     "cyclonedx-python-lib>=6.0.0",
     "jinja2>=3.1.0",
-    "pillow>=12.3.0",
+    "pillow<11.0.0",
     "lxml>=6.1.0",
     "urllib3 >= 2.7.0",
     "gitpython>=3.1.54",
